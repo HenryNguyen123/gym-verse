@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Email Verification</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f4f6f8;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+    .header {
+      background: #2563eb;
+      color: #ffffff;
+      padding: 24px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+    }
+    .content {
+      padding: 30px;
+      color: #333333;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .button-wrapper {
+      text-align: center;
+      margin: 30px 0;
+    }
+    .verify-btn {
+      background: #2563eb;
+      color: #ffffff;
+      padding: 14px 28px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      display: inline-block;
+    }
+    .verify-btn:hover {
+      background: #1e4ed8;
+    }
+    .footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 12px;
+      color: #888888;
+      background: #fafafa;
+    }
+    .link {
+      word-break: break-all;
+      color: #2563eb;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      Verify Your Email
+    </div>
+
+    <div class="content">
+      <p>Hello {{name}},</p>
+
+      <p>
+        Thank you for signing up. Please confirm your email address to activate your account.
+      </p>
+
+      <div class="button-wrapper">
+        <a href="{{verify_link}}" class="verify-btn">
+          Verify Email
+        </a>
+      </div>
+
+      <p>
+        Or copy and paste this link into your browser:
+      </p>
+
+      <p class="link">{{verify_link}}</p>
+
+      <p>
+        This verification link will expire in {{expire_time}}.
+      </p>
+
+      <p>
+        If you did not create an account, please ignore this email.
+      </p>
+
+      <p>
+        Best regards,<br/>
+        support email<br/>
+        Support Team
+      </p>
+    </div>
+
+    <div class="footer">
+      © {{year}} Your Company. All rights reserved.
+    </div>
+  </div>
+
+</body>
+</html>
