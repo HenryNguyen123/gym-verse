@@ -4,7 +4,7 @@ services:
   # redis
   redis:
     image: redis:7
-    container_name: redis_container_second
+    container_name: redis_container_gym_verse
     restart: always
     ports:
       - "6379:6379"
@@ -14,14 +14,14 @@ services:
   # database postgres
   db:
     image: postgres:17
-    container_name: postgres_container_second
+    container_name: postgres_container_gym_verse
     restart: always
     environment:
-      POSTGRES_DB: nestjs_basic_login
+      POSTGRES_DB: nestjs_gym_serse
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: "123456"
     ports:
-      - "5432:5432"
+      - "5555:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 

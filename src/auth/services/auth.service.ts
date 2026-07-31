@@ -164,6 +164,7 @@ export class AuthService {
     await this.refreshTokenRepository.save(refreshTokenEntity);
     // response
     return plainToInstance(LoginResponseDto, {
+      status: 200,
       accessToken,
       refreshToken,
       user: payload,
@@ -273,6 +274,9 @@ export class AuthService {
       `${frontendUrl}/verify?token=${uuid}`,
       '24h',
     );
+    return {
+      stastus: 'successfuly',
+    };
   }
 
   // step: send mail verify

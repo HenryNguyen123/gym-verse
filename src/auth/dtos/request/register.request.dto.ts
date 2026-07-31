@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
@@ -17,7 +17,7 @@ export class RegisterDto {
   })
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'john_doe',
@@ -27,7 +27,7 @@ export class RegisterDto {
   @MinLength(3)
   @MaxLength(20)
   @IsNotEmpty()
-  userName: string;
+  userName!: string;
 
   @ApiProperty({
     example: 'password',
@@ -37,14 +37,14 @@ export class RegisterDto {
   @MinLength(6)
   @MaxLength(100)
   @IsNotEmpty()
-  password: string;
+  password!: string;
 
   @ApiProperty({
     example: 'John Doe',
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
+  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
   @IsString()
   @MinLength(3)
   @MaxLength(100)
@@ -55,7 +55,7 @@ export class RegisterDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
+  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
   @IsString()
   @MinLength(3)
   @MaxLength(100)
@@ -68,7 +68,7 @@ export class RegisterDto {
   @IsOptional()
   @Transform(({ value }) => {
     if (!value) return undefined;
-    return new Date(value);
+    return new Date(value as string);
   })
   // @Type(() => Date)
   @IsDate()
@@ -79,7 +79,7 @@ export class RegisterDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
+  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
   @IsString()
   @MinLength(10)
   @MaxLength(15)
