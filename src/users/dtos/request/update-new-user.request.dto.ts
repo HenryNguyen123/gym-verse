@@ -1,12 +1,23 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDate,
+  IsEnum,
+  IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
+import { RoleEnum } from 'src/roles/enums/role.enum';
+import {
+  FitnessGoalEnum,
+  FitnessLevelEnum,
+  GenderEnum,
+  PrivacySettingEnum,
+} from 'src/users/enums/profile.enum';
 
 export class UpdateNewUserResDto {
   @ApiProperty({
@@ -21,18 +32,17 @@ export class UpdateNewUserResDto {
   fullName?: string;
 
   @ApiProperty({
-    example: 'male',
+    example: GenderEnum.MALE,
     required: false,
+    enum: GenderEnum,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
-  @IsString()
-  @MinLength(3)
-  @MaxLength(100)
-  gender?: string;
+  @Transform(({ value }) => (value === '' ? undefined : (value as GenderEnum)))
+  @IsEnum(GenderEnum)
+  gender?: GenderEnum;
 
   @ApiProperty({
-    example: '1990-01-01',
+    example: '1995-08-04',
     required: false,
   })
   @IsOptional()
@@ -41,7 +51,7 @@ export class UpdateNewUserResDto {
     return new Date(value as string);
   })
   @IsDate()
-  dob?: string;
+  birthday?: Date;
 
   @ApiProperty({
     example: '0123456789',
@@ -60,17 +70,128 @@ export class UpdateNewUserResDto {
     required: false,
   })
   @IsOptional()
-  avatar?: any;
+  avatar?: Express.Multer.File;
 
-  // role
   @ApiProperty({
-    example: 'USER',
+    type: 'string',
+    format: 'binary',
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
+  coverImage?: Express.Multer.File;
+
+  @ApiProperty({
+    example: 'Fitness enthusiast',
+    required: false,
+  })
+  @IsOptional()
   @IsString()
   @MinLength(3)
+  bio?: string;
+
+  @ApiProperty({
+    example: 175,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  height?: number;
+
+  @ApiProperty({
+    example: 72,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  weight?: number;
+
+  @ApiProperty({
+    example: 15.5,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  bodyFat?: number;
+
+  @ApiProperty({
+    example: FitnessGoalEnum.BUILD_MUSCLE,
+    enum: FitnessGoalEnum,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === '' ? undefined : (value as FitnessGoalEnum),
+  )
+  @IsEnum(FitnessGoalEnum)
+  goal?: FitnessGoalEnum;
+
+  @ApiProperty({
+    example: FitnessLevelEnum.BEGINNER,
+    enum: FitnessLevelEnum,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === '' ? undefined : (value as FitnessLevelEnum),
+  )
+  @IsEnum(FitnessLevelEnum)
+  fitnessLevel?: FitnessLevelEnum;
+
+  @ApiProperty({
+    example: 2,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  experienceYears?: number;
+
+  @ApiProperty({
+    example: 'Ho Chi Minh City',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
   @MaxLength(100)
-  roleCode?: string;
+  city?: string;
+
+  @ApiProperty({
+    example: 'Vietnam',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  country?: string;
+
+  @ApiProperty({
+    example: PrivacySettingEnum.PUBLIC,
+    enum: PrivacySettingEnum,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === '' ? undefined : (value as PrivacySettingEnum),
+  )
+  @IsEnum(PrivacySettingEnum)
+  privacySetting?: PrivacySettingEnum;
+
+  @ApiProperty({
+    example: RoleEnum.USER,
+    enum: RoleEnum,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : (value as RoleEnum)))
+  @IsEnum(RoleEnum)
+  roleCode?: RoleEnum;
 }

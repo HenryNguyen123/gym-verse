@@ -1,6 +1,6 @@
 import { Expose, Type } from 'class-transformer';
-import { RoleResponseDto } from 'src/roles/dtos/response/role.response.dto';
 import { ProfileResponseDto } from 'src/users/dtos/response/profile.respose.dto';
+import { UserRoleResponseDto } from 'src/roles/dtos/response/user-role.response.dto';
 
 export class UserResponseDto {
   @Expose()
@@ -10,10 +10,16 @@ export class UserResponseDto {
   email!: string;
 
   @Expose()
-  isActive?: boolean;
+  isActive!: boolean;
 
   @Expose()
-  failedLoginAttempts?: number;
+  isVerified!: boolean;
+
+  @Expose()
+  status!: string;
+
+  @Expose()
+  failedLoginAttempts!: number;
 
   @Expose()
   lockedUntil?: Date;
@@ -22,16 +28,16 @@ export class UserResponseDto {
   lastLoginAt?: Date;
 
   @Expose()
-  createdAt?: Date;
+  createdAt!: Date;
 
   @Expose()
-  updatedAt?: Date;
+  updatedAt!: Date;
 
   @Expose()
   @Type(() => ProfileResponseDto)
   profile!: ProfileResponseDto;
 
   @Expose()
-  @Type(() => RoleResponseDto)
-  role!: RoleResponseDto;
+  @Type(() => UserRoleResponseDto)
+  userRole!: UserRoleResponseDto[];
 }

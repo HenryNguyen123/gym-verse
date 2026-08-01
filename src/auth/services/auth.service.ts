@@ -133,7 +133,7 @@ export class AuthService {
       profile: {
         fullName: user.profile.fullName,
         gender: user.profile.gender,
-        dob: user.profile.dob,
+        birthday: user.profile.birthday,
         phone: user.profile.phone,
         avatar: user.profile.avatar,
       },
@@ -203,7 +203,7 @@ export class AuthService {
     file: Express.Multer.File | null,
     path: string,
   ) {
-    const { email, password, userName, fullName, gender, dob, phone } =
+    const { email, password, userName, fullName, gender, birthday, phone } =
       registerDto;
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     // const RoleUserCode = RoleCodeEnum.USER;
@@ -232,7 +232,7 @@ export class AuthService {
       user: userEntity,
       fullName,
       gender,
-      dob,
+      birthday,
       phone,
       avatar: pathAvatar ?? undefined,
     });

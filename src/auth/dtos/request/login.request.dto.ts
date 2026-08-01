@@ -8,13 +8,13 @@ export class LoginDto {
   @IsString()
   @MinLength(3)
   @IsNotEmpty()
-  @Transform(({ value }) => value.trim())
-  email: string;
+  @Transform(({ value }) => (value as string).trim())
+  email!: string;
 
   @ApiProperty({ example: '123456' })
   @MinLength(6)
   @IsNotEmpty()
   @IsString()
-  @Transform(({ value }) => value.trim())
-  password: string;
+  @Transform(({ value }) => (value as string).trim())
+  password!: string;
 }

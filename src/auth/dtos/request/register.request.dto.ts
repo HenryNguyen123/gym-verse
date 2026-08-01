@@ -3,17 +3,18 @@ import { Transform } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { GenderEnum } from 'src/users/enums/profile.enum';
 
 export class RegisterDto {
   @ApiProperty({
     example: 'test@gmail.com',
-    required: true,
   })
   @IsEmail()
   @IsNotEmpty()
@@ -21,7 +22,6 @@ export class RegisterDto {
 
   @ApiProperty({
     example: 'john_doe',
-    required: true,
   })
   @IsString()
   @MinLength(3)
@@ -30,8 +30,7 @@ export class RegisterDto {
   userName!: string;
 
   @ApiProperty({
-    example: 'password',
-    required: true,
+    example: 'password123',
   })
   @IsString()
   @MinLength(6)
@@ -51,18 +50,17 @@ export class RegisterDto {
   fullName?: string;
 
   @ApiProperty({
-    example: 'male',
+    example: GenderEnum.MALE,
+    enum: GenderEnum,
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as string)))
-  @IsString()
-  @MinLength(3)
-  @MaxLength(100)
-  gender?: string;
+  @Transform(({ value }) => (value === '' ? undefined : (value as GenderEnum)))
+  @IsEnum(GenderEnum)
+  gender?: GenderEnum;
 
   @ApiProperty({
-    example: '1990-01-01',
+    example: '1995-08-04',
     required: false,
   })
   @IsOptional()
@@ -70,9 +68,8 @@ export class RegisterDto {
     if (!value) return undefined;
     return new Date(value as string);
   })
-  // @Type(() => Date)
   @IsDate()
-  dob?: string;
+  birthday?: Date;
 
   @ApiProperty({
     example: '0123456789',
@@ -91,5 +88,13 @@ export class RegisterDto {
     required: false,
   })
   @IsOptional()
-  avatar?: any;
+  avatar?: Express.Multer.File;
+
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  @IsOptional()
+  coverImage?: Express.Multer.File;
 }

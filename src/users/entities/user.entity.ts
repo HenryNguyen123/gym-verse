@@ -1,80 +1,95 @@
 import {
-  IsBoolean,
-  IsDate,
-  IsEmail,
-  IsNotEmpty,
-  IsNumber,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-import { AuditLog } from 'src/audits/entities/audit-log.entity';
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToOne,
+  OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+import { Profile } from './profile.entity';
+import { UserRole } from 'src/roles/entities/user-role.entity';
 import { RefreshToken } from 'src/auth/entities/refresh-token.entity';
 import { ResetPasswordToken } from 'src/auth/entities/reset-password-token.entity';
-import { InventoryLog } from 'src/catalogs/entities/inventory-log.entity';
+import { AuditLog } from 'src/audits/entities/audit-log.entity';
 import { Category } from 'src/categories/entities/category.entity';
-import { UserRole } from 'src/roles/entities/user-role.entity';
-import { Profile } from 'src/users/entities/profile.entity';
-import {
-  Column,
-  Entity,
-  OneToMany,
-  OneToOne,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { InventoryLog } from 'src/catalogs/entities/inventory-log.entity';
+import { UserStatusEnum } from 'src/users/enums/user.enum';
 
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ name: 'user_name', unique: true })
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(3)
-  @MaxLength(20)
+  @Column({
+    name: 'user_name',
+    unique: true,
+    length: 30,
+  })
   userName!: string;
 
-  @Column({ unique: true })
-  @IsEmail()
-  @IsNotEmpty()
-  @MinLength(8)
-  @MaxLength(150)
+  @Column({
+    unique: true,
+    length: 150,
+  })
   email!: string;
 
-  @Column({ select: false })
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(6)
+  @Column({
+    select: false,
+  })
   password!: string;
 
-  @Column({ name: 'is_active', default: true })
-  @IsBoolean()
+  @Column({
+    name: 'is_active',
+    type: 'boolean',
+    default: true,
+  })
   isActive!: boolean;
 
-  @Column({ name: 'is_verified' })
-  @IsBoolean()
-  isVerified?: boolean;
+  @Column({
+    name: 'is_verified',
+    type: 'boolean',
+    default: false,
+  })
+  isVerified!: boolean;
 
-  @Column({ name: 'failed_login_attempts' })
-  @IsNumber()
-  failedLoginAttempts?: number;
+  @Column({
+    type: 'enum',
+    enum: UserStatusEnum,
+    default: UserStatusEnum.OFFLINE,
+  })
+  status!: UserStatusEnum;
 
-  @Column({ name: 'locked_until' })
-  @IsDate()
+  @Column({
+    name: 'failed_login_attempts',
+    default: 0,
+  })
+  failedLoginAttempts!: number;
+
+  @Column({
+    name: 'locked_until',
+    nullable: true,
+  })
   lockedUntil?: Date;
 
-  @Column({ name: 'last_login_at' })
-  @IsDate()
+  @Column({
+    name: 'last_login_at',
+    nullable: true,
+  })
   lastLoginAt?: Date;
 
-  @Column({ name: 'created_at' })
-  @IsDate()
-  createdAt?: Date;
+  @CreateDateColumn({
+    name: 'created_at',
+  })
+  createdAt!: Date;
 
-  @Column({ name: 'updated_at' })
-  @IsDate()
-  updatedAt?: Date;
+  @UpdateDateColumn({
+    name: 'updated_at',
+  })
+  updatedAt!: Date;
+
+  // ================= Relation =================
 
   @OneToOne(() => Profile, (profile) => profile.user)
   profile!: Profile;
@@ -82,14 +97,14 @@ export class User {
   @OneToMany(() => UserRole, (userRole) => userRole.user)
   userRoles!: UserRole[];
 
-  @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
-  refreshTokens?: RefreshToken[];
-
-  @OneToMany(() => AuditLog, (auditLog) => auditLog.user)
-  auditLogs?: AuditLog[];
+  @OneToMany(() => RefreshToken, (token) => token.user)
+  refreshTokens!: RefreshToken[];
 
   @OneToMany(() => ResetPasswordToken, (token) => token.user)
-  resetTokens?: ResetPasswordToken[];
+  resetTokens!: ResetPasswordToken[];
+
+  @OneToMany(() => AuditLog, (audit) => audit.user)
+  auditLogs!: AuditLog[];
 
   // category RELATION
   @OneToMany(() => Category, (category) => category.createdUser)

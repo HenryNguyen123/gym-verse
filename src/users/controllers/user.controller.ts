@@ -16,12 +16,10 @@ import {
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
-import { UploadFileInterceptor } from 'src/commons/interceptors/upload-file.interceptor';
+import { UploadSomeFilesInterceptor } from 'src/commons/interceptors/upload-some-file.interceptor';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
-import { DeleteUserDto } from 'src/users/dtos/request/delete-user.request.dto';
 import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.request.dto';
-import { ReadUserResponseDto } from 'src/users/dtos/response/read-user.response.dto';
 import { UserResponseDto } from 'src/users/dtos/response/user.response.dto';
 import { UserService } from 'src/users/services/user.service';
 
@@ -32,19 +30,32 @@ export class UserController {
   constructor(private userService: UserService) {}
   //create
   @Post()
-  @UseGuards(JwtAuthGuard, RoleAdminGuard)
+  // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     type: CreateUserDto,
   })
-  @UseInterceptors(UploadFileInterceptor('avatar', './public/images/avatar'))
+  @UseInterceptors(
+    UploadSomeFilesInterceptor([
+      { name: 'avatar', destination: './public/images/avatar', maxCount: 1 },
+      {
+        name: 'coverImage',
+        destination: './public/images/avatar',
+        maxCount: 1,
+      },
+    ]),
+  )
   async create(
     @Body() createUserDto: CreateUserDto,
-    @UploadedFile() file: Express.Multer.File | null,
+    @UploadedFile()
+    files: {
+      avatar?: Express.Multer.File[];
+      coverImage?: Express.Multer.File[];
+    },
   ): Promise<void> {
     const path: string = '/images/avatar';
-    await this.userService.create(createUserDto, file, path);
+    await this.userService.create(createUserDto, files, path);
   }
   //update
   @Patch(':id')
@@ -52,18 +63,31 @@ export class UserController {
   @ApiBody({
     type: UpdateNewUserResDto,
   })
-  @UseInterceptors(UploadFileInterceptor('avatar', './public/images/avatar'))
+  @UseInterceptors(
+    UploadSomeFilesInterceptor([
+      { name: 'avatar', destination: './public/images/avatar', maxCount: 1 },
+      {
+        name: 'coverImage',
+        destination: './public/images/avatar',
+        maxCount: 1,
+      },
+    ]),
+  )
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateNewUserResDto,
-    @UploadedFile() file: Express.Multer.File | null,
+    @UploadedFile()
+    files: {
+      avatar?: Express.Multer.File[];
+      coverImage?: Express.Multer.File[];
+    },
   ): Promise<UserResponseDto> {
     const path: string = '/images/avatar';
-    return this.userService.update(id, updateUserDto, file, path);
+    return this.userService.update(id, updateUserDto, files, path);
   }
   //read
   @Get()
-  async read(): Promise<ReadUserResponseDto> {
+  async read(): Promise<UserResponseDto[]> {
     return await this.userService.read();
   }
   //find user by id
@@ -86,13 +110,10 @@ export class UserController {
     return await this.userService.updateStatus(body, id);
   }
   //delete user
-  @Delete()
+  @Delete(':id')
   @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @HttpCode(204)
-  @ApiBody({
-    type: DeleteUserDto,
-  })
-  async delete(@Body() body: DeleteUserDto) {
-    await this.userService.delete(body);
+  async delete(@Param('id', ParseIntPipe) id: number) {
+    await this.userService.delete(id);
   }
 }

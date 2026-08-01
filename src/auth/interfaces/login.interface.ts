@@ -9,7 +9,7 @@ export interface IPayloadLogin {
   profile: {
     fullName?: string;
     gender?: string;
-    dob?: Date;
+    birthday?: Date;
     phone?: string;
     avatar?: string;
   };

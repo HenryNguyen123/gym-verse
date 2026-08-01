@@ -5,22 +5,24 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
     // USERS
     await queryRunner.query(`
       CREATE TABLE users (
-        id SERIAL PRIMARY KEY,
+          id BIGSERIAL PRIMARY KEY,
 
-        email VARCHAR(255) NOT NULL UNIQUE,
-        user_name VARCHAR(255) NOT NULL UNIQUE,
-        password VARCHAR(255) NOT NULL,
+          email VARCHAR(150) NOT NULL UNIQUE,
+          user_name VARCHAR(30) NOT NULL UNIQUE,
+          password VARCHAR(255) NOT NULL,
 
-        is_active BOOLEAN DEFAULT TRUE,
-        is_verified BOOLEAN DEFAULT FALSE,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          is_verified BOOLEAN NOT NULL DEFAULT FALSE,
 
-        failed_login_attempts INT DEFAULT 0,
-        locked_until TIMESTAMP NULL,
-        last_login_at TIMESTAMP NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'offline',
 
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
+          failed_login_attempts INT NOT NULL DEFAULT 0,
+          locked_until TIMESTAMP NULL,
+          last_login_at TIMESTAMP NULL,
+
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // ROLES
@@ -49,21 +51,32 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
     // PROFILES
     await queryRunner.query(`
       CREATE TABLE profiles (
-        id SERIAL PRIMARY KEY,
-        user_id BIGINT UNIQUE NOT NULL,
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL UNIQUE,
+          full_name VARCHAR(100) NOT NULL,
+          avatar VARCHAR(255),
+          cover_image VARCHAR(255),
+          bio TEXT,
+          gender VARCHAR(20),
+          birthday DATE,
+          phone VARCHAR(20),
+          height DECIMAL(5,2),
+          weight DECIMAL(5,2),
+          body_fat DECIMAL(5,2),
+          goal VARCHAR(50),
+          fitness_level VARCHAR(30) DEFAULT 'beginner',
+          experience_years SMALLINT DEFAULT 0,
+          city VARCHAR(100),
+          country VARCHAR(100),
+          privacy_setting VARCHAR(20) DEFAULT 'public',
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-        full_name VARCHAR(255),
-        gender VARCHAR(50),
-        dob DATE,
-        phone VARCHAR(50),
-        avatar VARCHAR(255),
-
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-        CONSTRAINT fk_profiles_user
-          FOREIGN KEY (user_id) REFERENCES users(id)
-          ON DELETE CASCADE
-      )
+          CONSTRAINT fk_profiles_user
+              FOREIGN KEY (user_id)
+              REFERENCES users(id)
+              ON DELETE CASCADE
+      );
     `);
 
     // USER_ROLES
@@ -133,24 +146,24 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
     `);
 
     // RESET PASSWORD TOKEN
-    await queryRunner.query(`
-      CREATE TABLE reset_password_tokens (
-        id SERIAL PRIMARY KEY,
-        token TEXT NOT NULL UNIQUE,
+    // await queryRunner.query(`
+    //   CREATE TABLE reset_password_tokens (
+    //     id SERIAL PRIMARY KEY,
+    //     token TEXT NOT NULL UNIQUE,
 
-        user_id BIGINT NOT NULL,
+    //     user_id BIGINT NOT NULL,
 
-        expired_at TIMESTAMP NOT NULL,
-        is_used BOOLEAN DEFAULT FALSE,
+    //     expired_at TIMESTAMP NOT NULL,
+    //     is_used BOOLEAN DEFAULT FALSE,
 
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    //     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-        CONSTRAINT fk_rpt_user
-          FOREIGN KEY (user_id)
-          REFERENCES users(id)
-          ON DELETE CASCADE
-      )
-    `);
+    //     CONSTRAINT fk_rpt_user
+    //       FOREIGN KEY (user_id)
+    //       REFERENCES users(id)
+    //       ON DELETE CASCADE
+    //   )
+    // `);
 
     // AUDIT LOGS
     await queryRunner.query(`
@@ -376,118 +389,271 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
 
     // ===== SEED DATA =====
 
+    // ======================
+    // ROLES
+    // ======================
     await queryRunner.query(`
-      INSERT INTO roles (name, code, description) VALUES
-      ('Super Admin', 'SUPER_ADMIN', 'Full system access'),
-      ('Administrator', 'ADMIN', 'System administrator'),
-      ('User', 'USER', 'Normal user')
-    `);
-
-    await queryRunner.query(`
-      INSERT INTO permissions (name, code, module) VALUES
-      ('Create User', 'CREATE_USER', 'USER'),
-      ('Update User', 'UPDATE_USER', 'USER'),
-      ('Delete User', 'DELETE_USER', 'USER'),
-      ('View Dashboard', 'VIEW_DASHBOARD', 'DASHBOARD')
-    `);
-
-    // SUPER_ADMIN full quyền
-    await queryRunner.query(`
-      INSERT INTO role_permissions (role_id, permission_id)
-      SELECT r.id, p.id
-      FROM roles r, permissions p
-      WHERE r.code = 'SUPER_ADMIN'
-    `);
-
-    // USER chỉ xem dashboard
-    await queryRunner.query(`
-      INSERT INTO role_permissions (role_id, permission_id)
-      SELECT r.id, p.id
-      FROM roles r
-      JOIN permissions p ON p.code = 'VIEW_DASHBOARD'
-      WHERE r.code = 'USER'
-    `);
-
-    // seed fake user
-    await queryRunner.query(`
-      INSERT INTO users (email, user_name, password)
+      INSERT INTO roles (name, code, description)
       VALUES
-      (
-        'admin@gmail.com',
-        'admin',
-        '$2b$10$rvYkmCsdWQpSVkW0BPp9RuHdHsnTpXuxOHjW5GGYyoy7aJ9.H/xsy'
-      ),
-      (
-        'user@gmail.com',
-        'user',
-        '$2b$10$rvYkmCsdWQpSVkW0BPp9RuHdHsnTpXuxOHjW5GGYyoy7aJ9.H/xsy'
-      )
-    `);
-    await queryRunner.query(`
-      INSERT INTO profiles (user_id, full_name, gender, dob, phone)
-      SELECT id, 'System Admin', 'Male', '1995-01-01', '0900000001'
-      FROM users WHERE user_name = 'admin'
+        ('Super Admin', 'SUPER_ADMIN', 'Full system access'),
+        ('Administrator', 'ADMIN', 'System administrator'),
+        ('User', 'USER', 'Normal user');
     `);
 
-    await queryRunner.query(`
-      INSERT INTO profiles (user_id, full_name, gender, dob, phone)
-      SELECT id, 'Normal User', 'Male', '2000-01-01', '0900000002'
-      FROM users WHERE user_name = 'user'
-    `);
-    // Admin → SUPER_ADMIN
-    await queryRunner.query(`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.id
-      FROM users u
-      JOIN roles r ON r.code = 'SUPER_ADMIN'
-      WHERE u.user_name = 'admin'
-    `);
-    // User → USER
-    await queryRunner.query(`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.id
-      FROM users u
-      JOIN roles r ON r.code = 'USER'
-      WHERE u.user_name = 'user'
-    `);
-    //fake permission
+    // ======================
+    // PERMISSIONS
+    // ======================
     await queryRunner.query(`
       INSERT INTO permissions (name, code, module)
       VALUES
-      ('Create Category', 'CREATE_CATEGORY', 'CATEGORY'),
-      ('Update Category', 'UPDATE_CATEGORY', 'CATEGORY'),
-      ('Delete Category', 'DELETE_CATEGORY', 'CATEGORY'),
-      ('View Category Detail', 'VIEW_CATEGORY', 'CATEGORY'),
-      ('List Categories', 'LIST_CATEGORY', 'CATEGORY'),
-      ('test Categories', 'TEST_CATEGORY', 'CATEGORY')
+        ('Create User', 'CREATE_USER', 'USER'),
+        ('Update User', 'UPDATE_USER', 'USER'),
+        ('Delete User', 'DELETE_USER', 'USER'),
+        ('View User', 'VIEW_USER', 'USER'),
+
+        ('Create Category', 'CREATE_CATEGORY', 'CATEGORY'),
+        ('Update Category', 'UPDATE_CATEGORY', 'CATEGORY'),
+        ('Delete Category', 'DELETE_CATEGORY', 'CATEGORY'),
+        ('View Category', 'VIEW_CATEGORY', 'CATEGORY'),
+
+        ('Create Product', 'CREATE_PRODUCT', 'PRODUCT'),
+        ('Update Product', 'UPDATE_PRODUCT', 'PRODUCT'),
+        ('Delete Product', 'DELETE_PRODUCT', 'PRODUCT'),
+        ('View Product', 'VIEW_PRODUCT', 'PRODUCT'),
+
+        ('View Dashboard', 'VIEW_DASHBOARD', 'DASHBOARD');
     `);
-    //SUPER_ADMIN full quyền
+
+    // ======================
+    // SUPER ADMIN -> ALL PERMISSIONS
+    // ======================
     await queryRunner.query(`
       INSERT INTO role_permissions (role_id, permission_id)
       SELECT r.id, p.id
       FROM roles r
-      JOIN permissions p ON p.code = 'TEST_CATEGORY'
-      WHERE r.code = 'SUPER_ADMIN'
+      CROSS JOIN permissions p
+      WHERE r.code = 'SUPER_ADMIN';
     `);
-    //USER chỉ có quyền test
+
+    // ======================
+    // ADMIN
+    // ======================
     await queryRunner.query(`
       INSERT INTO role_permissions (role_id, permission_id)
       SELECT r.id, p.id
       FROM roles r
-      JOIN permissions p ON p.code = 'TEST_CATEGORY'
-      WHERE r.code = 'USER'
+      JOIN permissions p
+        ON p.code IN (
+          'VIEW_DASHBOARD',
+          'VIEW_USER',
+          'CREATE_USER',
+          'UPDATE_USER',
+          'VIEW_CATEGORY',
+          'CREATE_CATEGORY',
+          'UPDATE_CATEGORY',
+          'VIEW_PRODUCT',
+          'CREATE_PRODUCT',
+          'UPDATE_PRODUCT'
+        )
+      WHERE r.code = 'ADMIN';
+    `);
+
+    // ======================
+    // USER
+    // ======================
+    await queryRunner.query(`
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id
+      FROM roles r
+      JOIN permissions p
+        ON p.code IN (
+          'VIEW_DASHBOARD',
+          'VIEW_PRODUCT',
+          'VIEW_CATEGORY'
+        )
+      WHERE r.code = 'USER';
+    `);
+
+    // ======================
+    // USERS
+    // password: 123456
+    // ======================
+    await queryRunner.query(`
+      INSERT INTO users
+        (email, user_name, password, is_verified)
+      VALUES
+        (
+          'admin@gmail.com',
+          'admin',
+          '$2b$10$rvYkmCsdWQpSVkW0BPp9RuHdHsnTpXuxOHjW5GGYyoy7aJ9.H/xsy',
+          true
+        ),
+        (
+          'manager@gmail.com',
+          'manager',
+          '$2b$10$rvYkmCsdWQpSVkW0BPp9RuHdHsnTpXuxOHjW5GGYyoy7aJ9.H/xsy',
+          true
+        ),
+        (
+          'user@gmail.com',
+          'user',
+          '$2b$10$rvYkmCsdWQpSVkW0BPp9RuHdHsnTpXuxOHjW5GGYyoy7aJ9.H/xsy',
+          true
+        );
+    `);
+
+    // ======================
+    // PROFILES
+    // ======================
+    await queryRunner.query(`
+      INSERT INTO profiles
+        (
+          user_id,
+          full_name,
+          gender,
+          birthday,
+          phone,
+          height,
+          weight,
+          goal,
+          fitness_level
+        )
+      SELECT
+          id,
+          'System Admin',
+          'Male',
+          '1995-01-01',
+          '0900000001',
+          175,
+          72,
+          'Maintain',
+          'advanced'
+      FROM users
+      WHERE user_name='admin';
+    `);
+
+    await queryRunner.query(`
+      INSERT INTO profiles
+        (
+          user_id,
+          full_name,
+          gender,
+          birthday,
+          phone,
+          height,
+          weight,
+          goal,
+          fitness_level
+        )
+      SELECT
+          id,
+          'Gym Manager',
+          'Male',
+          '1998-05-20',
+          '0900000002',
+          178,
+          78,
+          'Muscle Gain',
+          'intermediate'
+      FROM users
+      WHERE user_name='manager';
+    `);
+
+    await queryRunner.query(`
+      INSERT INTO profiles
+        (
+          user_id,
+          full_name,
+          gender,
+          birthday,
+          phone,
+          height,
+          weight,
+          goal,
+          fitness_level
+        )
+      SELECT
+          id,
+          'Normal User',
+          'Female',
+          '2000-10-15',
+          '0900000003',
+          160,
+          52,
+          'Weight Loss',
+          'beginner'
+      FROM users
+      WHERE user_name='user';
+    `);
+
+    // ======================
+    // USER ROLES
+    // ======================
+    await queryRunner.query(`
+      INSERT INTO user_roles(user_id, role_id)
+      SELECT u.id,r.id
+      FROM users u
+      JOIN roles r ON r.code='SUPER_ADMIN'
+      WHERE u.user_name='admin';
+    `);
+
+    await queryRunner.query(`
+      INSERT INTO user_roles(user_id, role_id)
+      SELECT u.id,r.id
+      FROM users u
+      JOIN roles r ON r.code='ADMIN'
+      WHERE u.user_name='manager';
+    `);
+
+    await queryRunner.query(`
+      INSERT INTO user_roles(user_id, role_id)
+      SELECT u.id,r.id
+      FROM users u
+      JOIN roles r ON r.code='USER'
+      WHERE u.user_name='user';
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE IF EXISTS audit_logs`);
-    await queryRunner.query(`DROP TABLE IF EXISTS verify_tokens`);
-    await queryRunner.query(`DROP TABLE IF EXISTS refresh_tokens`);
-    await queryRunner.query(`DROP TABLE IF EXISTS role_permissions`);
-    await queryRunner.query(`DROP TABLE IF EXISTS user_roles`);
-    await queryRunner.query(`DROP TABLE IF EXISTS profiles`);
-    await queryRunner.query(`DROP TABLE IF EXISTS permissions`);
-    await queryRunner.query(`DROP TABLE IF EXISTS roles`);
-    await queryRunner.query(`DROP TABLE IF EXISTS users`);
+    // ==========================
+    // INVENTORY
+    // ==========================
+    await queryRunner.query(`DROP TABLE IF EXISTS inventory_logs CASCADE`);
+
+    // ==========================
+    // PRODUCT
+    // ==========================
+    await queryRunner.query(`DROP TABLE IF EXISTS product_tags CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS product_images CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS product_variants CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS products CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS tags CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS sizes CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS colors CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS categories CASCADE`);
+
+    // ==========================
+    // AUTH
+    // ==========================
+    await queryRunner.query(`DROP TABLE IF EXISTS audit_logs CASCADE`);
+
+    // await queryRunner.query(
+    //   `DROP TABLE IF EXISTS reset_password_tokens CASCADE`,
+    // );
+    await queryRunner.query(`DROP TABLE IF EXISTS verify_tokens CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS refresh_tokens CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS role_permissions CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS user_roles CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS profiles CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS permissions CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS roles CASCADE`);
+
+    await queryRunner.query(`DROP TABLE IF EXISTS users CASCADE`);
   }
 }

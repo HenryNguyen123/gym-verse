@@ -10,5 +10,5 @@ export class UpdateStatusUserDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsNotEmpty()
   @IsBoolean()
-  isActive: boolean;
+  isActive!: boolean;
 }
