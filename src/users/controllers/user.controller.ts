@@ -10,12 +10,14 @@ import {
   Patch,
   Post,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
+import { UploadSomeFilesCloudinaryInterceptor } from 'src/commons/interceptors/upload-some-file-cloudinary.interceptor';
 import { UploadSomeFilesInterceptor } from 'src/commons/interceptors/upload-some-file.interceptor';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
 import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
@@ -30,32 +32,33 @@ export class UserController {
   constructor(private userService: UserService) {}
   //create
   @Post()
-  @UseGuards(JwtAuthGuard, RoleAdminGuard)
+  // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     type: CreateUserDto,
   })
   @UseInterceptors(
-    UploadSomeFilesInterceptor([
-      { name: 'avatar', destination: './public/images/avatar', maxCount: 1 },
+    UploadSomeFilesCloudinaryInterceptor([
+      {
+        name: 'avatar',
+        maxCount: 1,
+      },
       {
         name: 'coverImage',
-        destination: './public/images/avatar',
         maxCount: 1,
       },
     ]),
   )
   async create(
     @Body() createUserDto: CreateUserDto,
-    @UploadedFile()
+    @UploadedFiles()
     files: {
       avatar?: Express.Multer.File[];
       coverImage?: Express.Multer.File[];
     },
-  ): Promise<void> {
-    const path: string = '/images/avatar';
-    await this.userService.create(createUserDto, files, path);
+  ): Promise<UserResponseDto> {
+    return await this.userService.create(createUserDto, files);
   }
   //update
   @Patch(':id')

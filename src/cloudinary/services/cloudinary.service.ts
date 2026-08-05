@@ -10,7 +10,9 @@ export class CloudinaryService {
     private readonly cloudinary: typeof Cloudinary,
   ) {}
 
-  async uploadFile(file: Express.Multer.File): Promise<UploadApiResponse> {
+  async uploadFileCloudinary(
+    file: Express.Multer.File,
+  ): Promise<UploadApiResponse> {
     return new Promise((resolve, reject) => {
       const upload = this.cloudinary.uploader.upload_stream(
         {
@@ -26,7 +28,7 @@ export class CloudinaryService {
     });
   }
 
-  async uploadSomeFiles(
+  async uploadSomeFilesCloudinary(
     files: Express.Multer.File[],
   ): Promise<UploadApiResponse[]> {
     const uploadPromises = files.map(

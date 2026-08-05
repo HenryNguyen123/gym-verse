@@ -7,8 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { UploadApiResponse } from 'cloudinary';
 import { randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
+import { CloudinaryService } from 'src/cloudinary/services/cloudinary.service';
 import { hashPassword } from 'src/commons/utils/password.util';
 import { pathFileName } from 'src/commons/utils/path-file-name.util';
 import { MailService } from 'src/mails/services/mail.service';
@@ -38,6 +40,7 @@ export class UserService {
     private readonly verifyTokenRepository: Repository<VerifyToken>,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
   //create user
   async create(
@@ -46,7 +49,6 @@ export class UserService {
       avatar?: Express.Multer.File[];
       coverImage?: Express.Multer.File[];
     } = {},
-    path: string,
   ): Promise<UserResponseDto> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
 
@@ -80,11 +82,18 @@ export class UserService {
     }
 
     // Upload files
-    const avatar = files.avatar?.[0] ?? null;
-    const coverImage = files.coverImage?.[0] ?? null;
-
-    const avatarPath = pathFileName(avatar, path);
-    const coverImagePath = pathFileName(coverImage, path);
+    let avatarUpload: UploadApiResponse | null = null;
+    let coverImageUpload: UploadApiResponse | null = null;
+    if (files.avatar?.length) {
+      avatarUpload = await this.cloudinaryService.uploadFileCloudinary(
+        files.avatar[0],
+      );
+    }
+    if (files.coverImage?.length) {
+      coverImageUpload = await this.cloudinaryService.uploadFileCloudinary(
+        files.coverImage[0],
+      );
+    }
 
     // Hash password
     const hashedPassword = await hashPassword(password);
@@ -105,8 +114,10 @@ export class UserService {
       gender,
       birthday,
       phone,
-      avatar: avatarPath ?? undefined,
-      coverImage: coverImagePath ?? undefined,
+      avatar: avatarUpload?.secure_url ?? undefined,
+      avatarPublicId: avatarUpload?.public_id ?? undefined,
+      coverImage: coverImageUpload?.secure_url ?? undefined,
+      coverImagePublicId: coverImageUpload?.public_id ?? undefined,
       bio,
       height,
       weight,
@@ -118,7 +129,6 @@ export class UserService {
       country,
       privacySetting,
     });
-
     await this.profileRepository.save(profile);
 
     // Role

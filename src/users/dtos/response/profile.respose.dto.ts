@@ -14,7 +14,13 @@ export class ProfileResponseDto {
   avatar?: string;
 
   @Expose()
+  avatarPublicId?: string;
+
+  @Expose()
   coverImage?: string;
+
+  @Expose()
+  coverImagePublicId?: string;
 
   @Expose()
   bio?: string;
