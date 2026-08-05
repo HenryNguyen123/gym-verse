@@ -25,4 +25,34 @@ export class CloudinaryService {
       Readable.from(file.buffer).pipe(upload);
     });
   }
+
+  async uploadSomeFiles(
+    files: Express.Multer.File[],
+  ): Promise<UploadApiResponse[]> {
+    const uploadPromises = files.map(
+      (file) =>
+        new Promise<UploadApiResponse>((resolve, reject) => {
+          const upload = this.cloudinary.uploader.upload_stream(
+            {
+              folder: 'gymverse',
+            },
+            (error, result) => {
+              if (error) {
+                return reject(new Error(error.message));
+              }
+
+              if (!result) {
+                return reject(new Error('Upload failed'));
+              }
+
+              resolve(result);
+            },
+          );
+
+          Readable.from(file.buffer).pipe(upload);
+        }),
+    );
+
+    return Promise.all(uploadPromises);
+  }
 }
