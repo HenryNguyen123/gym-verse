@@ -14,6 +14,7 @@ import { MailModule } from 'src/mails/mail.module';
 import { UserModule } from 'src/users/user.module';
 import { RoleModule } from 'src/roles/role.module';
 import { CatalogModule } from 'src/catalogs/catalog.module';
+import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot({
@@ -36,6 +37,7 @@ import { CatalogModule } from 'src/catalogs/catalog.module';
     }),
     AuthModule,
     RedisModule,
+    CloudinaryModule,
     CategoryModule,
     PermissionModule,
     MailModule,

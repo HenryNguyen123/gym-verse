@@ -30,7 +30,7 @@ export class UserController {
   constructor(private userService: UserService) {}
   //create
   @Post()
-  // @UseGuards(JwtAuthGuard, RoleAdminGuard)
+  @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -60,6 +60,7 @@ export class UserController {
   //update
   @Patch(':id')
   @ApiConsumes('multipart/form-data')
+  @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @ApiBody({
     type: UpdateNewUserResDto,
   })
@@ -87,6 +88,7 @@ export class UserController {
   }
   //read
   @Get()
+  @UseGuards(JwtAuthGuard, RoleAdminGuard)
   async read(): Promise<UserResponseDto[]> {
     return await this.userService.read();
   }
@@ -99,6 +101,7 @@ export class UserController {
   }
   //update status user
   @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @ApiBody({
     type: UpdateStatusUserDto,

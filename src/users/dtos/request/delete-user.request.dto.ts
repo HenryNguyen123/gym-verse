@@ -8,5 +8,5 @@ export class DeleteUserDto {
   })
   @IsNumber()
   @IsNotEmpty()
-  id: number;
+  id!: number;
 }

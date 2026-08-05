@@ -51,7 +51,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'John Doe',
-    required: false,
+    required: true,
     maxLength: 100,
   })
   @IsNotEmpty()
@@ -64,6 +64,8 @@ export class CreateUserDto {
   @ApiProperty({
     example: 'male',
     default: GenderEnum.MALE,
+    enum: GenderEnum,
+    required: false,
   })
   @IsOptional()
   @Transform(({ value }) => (value === '' ? undefined : (value as GenderEnum)))
@@ -72,6 +74,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: '1990-01-01',
+    required: false,
   })
   @IsOptional()
   @Transform(({ value }) => {
@@ -84,6 +87,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: '0123456789',
+    required: false,
   })
   @IsOptional()
   @Transform(({ value }) => (value === '' ? undefined : (value as string)))
@@ -95,6 +99,7 @@ export class CreateUserDto {
   @ApiProperty({
     type: 'string',
     format: 'binary',
+    required: false,
   })
   @IsOptional()
   avatar?: Express.Multer.File;
@@ -102,12 +107,14 @@ export class CreateUserDto {
   @ApiProperty({
     type: 'string',
     format: 'binary',
+    required: false,
   })
   @IsOptional()
   coverImage?: Express.Multer.File;
 
   @ApiProperty({
     example: 'bio text text text text',
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -116,6 +123,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 123,
+    required: false,
   })
   @IsOptional()
   @IsNumber({
@@ -127,6 +135,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 123,
+    required: false,
   })
   @IsOptional()
   @IsNumber({
@@ -138,6 +147,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 123,
+    required: false,
   })
   @IsOptional()
   @IsNumber({
@@ -149,6 +159,8 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'build_muscle',
+    required: false,
+    enum: FitnessGoalEnum,
   })
   @IsOptional()
   @Transform(({ value }) =>
@@ -159,6 +171,8 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'beginner',
+    enum: FitnessLevelEnum,
+    required: false,
   })
   @IsOptional()
   @Transform(({ value }) =>
@@ -169,6 +183,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 1,
+    required: false,
   })
   @IsOptional()
   @Type(() => Number)
@@ -178,6 +193,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'tp hcm',
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -186,7 +202,7 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'VietNamese',
-    nullable: true,
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -196,6 +212,8 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'public',
+    enum: PrivacySettingEnum,
+    required: true,
   })
   @IsNotEmpty()
   @Transform(({ value }) =>

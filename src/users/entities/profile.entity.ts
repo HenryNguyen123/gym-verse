@@ -34,11 +34,25 @@ export class Profile {
   avatar?: string;
 
   @Column({
+    name: 'avatar_public_id',
+    nullable: true,
+    length: 255,
+  })
+  avatarPublicId?: string;
+
+  @Column({
     name: 'cover_image',
     nullable: true,
     length: 255,
   })
   coverImage?: string;
+
+  @Column({
+    name: 'cover_image_public_id',
+    nullable: true,
+    length: 255,
+  })
+  coverImagePublicId?: string;
 
   @Column({
     type: 'text',
