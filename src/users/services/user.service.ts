@@ -7,12 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { UploadApiResponse } from 'cloudinary';
 import { randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
 import { CloudinaryService } from 'src/cloudinary/services/cloudinary.service';
 import { hashPassword } from 'src/commons/utils/password.util';
-import { pathFileName } from 'src/commons/utils/path-file-name.util';
 import { MailService } from 'src/mails/services/mail.service';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
@@ -82,19 +80,14 @@ export class UserService {
     }
 
     // Upload files
-    let avatarUpload: UploadApiResponse | null = null;
-    let coverImageUpload: UploadApiResponse | null = null;
-    if (files.avatar?.length) {
-      avatarUpload = await this.cloudinaryService.uploadFileCloudinary(
-        files.avatar[0],
-      );
-    }
-    if (files.coverImage?.length) {
-      coverImageUpload = await this.cloudinaryService.uploadFileCloudinary(
-        files.coverImage[0],
-      );
-    }
-
+    const [avatarUpload, coverImageUpload] = await Promise.all([
+      files.avatar?.length
+        ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
+        : Promise.resolve(null),
+      files.coverImage?.length
+        ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
+        : Promise.resolve(null),
+    ]);
     // Hash password
     const hashedPassword = await hashPassword(password);
 
@@ -194,7 +187,6 @@ export class UserService {
       avatar?: Express.Multer.File[];
       coverImage?: Express.Multer.File[];
     } = {},
-    path: string,
   ): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -210,12 +202,17 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    // ================= Upload =================
+    // Upload files
+    const [avatarUpload, coverImageUpload] = await Promise.all([
+      files.avatar?.length
+        ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
+        : Promise.resolve(null),
+      files.coverImage?.length
+        ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
+        : Promise.resolve(null),
+    ]);
 
-    const avatarPath = pathFileName(files.avatar?.[0] ?? null, path);
-    const coverImagePath = pathFileName(files.coverImage?.[0] ?? null, path);
-
-    // ================= Update Profile =================
+    // Update Profile
 
     await this.profileRepository.update(user.profile.id, {
       fullName: body.fullName ?? user.profile.fullName,
@@ -223,8 +220,11 @@ export class UserService {
       birthday: body.birthday ?? user.profile.birthday,
       phone: body.phone ?? user.profile.phone,
 
-      avatar: avatarPath ?? user.profile.avatar,
-      coverImage: coverImagePath ?? user.profile.coverImage,
+      avatar: avatarUpload?.secure_url ?? user.profile.avatar,
+      avatarPublicId: avatarUpload?.public_id ?? user.profile.avatarPublicId,
+      coverImage: coverImageUpload?.secure_url ?? user.profile.coverImage,
+      coverImagePublicId:
+        coverImageUpload?.public_id ?? user.profile.coverImagePublicId,
 
       bio: body.bio ?? user.profile.bio,
       height: body.height ?? user.profile.height,
@@ -238,7 +238,7 @@ export class UserService {
       privacySetting: body.privacySetting ?? user.profile.privacySetting,
     });
 
-    // ================= Update Role =================
+    // Update Role
 
     if (body.roleCode) {
       const role = await this.roleRepository.findOneBy({
@@ -269,8 +269,7 @@ export class UserService {
       await this.userRoleRepository.save(userRole);
     }
 
-    // ================= Reload =================
-
+    // Reload
     const result = await this.userRepository.findOne({
       where: { id },
       relations: {

@@ -9,7 +9,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  UploadedFile,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -18,7 +17,6 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
 import { UploadSomeFilesCloudinaryInterceptor } from 'src/commons/interceptors/upload-some-file-cloudinary.interceptor';
-import { UploadSomeFilesInterceptor } from 'src/commons/interceptors/upload-some-file.interceptor';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
 import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.request.dto';
@@ -63,31 +61,26 @@ export class UserController {
   //update
   @Patch(':id')
   @ApiConsumes('multipart/form-data')
-  @UseGuards(JwtAuthGuard, RoleAdminGuard)
+  // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @ApiBody({
     type: UpdateNewUserResDto,
   })
   @UseInterceptors(
-    UploadSomeFilesInterceptor([
-      { name: 'avatar', destination: './public/images/avatar', maxCount: 1 },
-      {
-        name: 'coverImage',
-        destination: './public/images/avatar',
-        maxCount: 1,
-      },
+    UploadSomeFilesCloudinaryInterceptor([
+      { name: 'avatar', maxCount: 1 },
+      { name: 'coverImage', maxCount: 1 },
     ]),
   )
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateNewUserResDto,
-    @UploadedFile()
+    @UploadedFiles()
     files: {
       avatar?: Express.Multer.File[];
       coverImage?: Express.Multer.File[];
     },
   ): Promise<UserResponseDto> {
-    const path: string = '/images/avatar';
-    return this.userService.update(id, updateUserDto, files, path);
+    return this.userService.update(id, updateUserDto, files);
   }
   //read
   @Get()
