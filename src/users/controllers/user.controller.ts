@@ -9,14 +9,11 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  UploadedFiles,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
-import { UploadSomeFilesCloudinaryInterceptor } from 'src/commons/interceptors/upload-some-file-cloudinary.interceptor';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
 import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.request.dto';
@@ -32,22 +29,10 @@ export class UserController {
   @Post()
   // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @HttpCode(HttpStatus.CREATED)
-  @ApiConsumes('multipart/form-data')
+  // @ApiConsumes('multipart/form-data')
   @ApiBody({
     type: CreateUserDto,
   })
-  // @UseInterceptors(
-  //   UploadSomeFilesCloudinaryInterceptor([
-  //     {
-  //       name: 'avatar',
-  //       maxCount: 1,
-  //     },
-  //     {
-  //       name: 'coverImage',
-  //       maxCount: 1,
-  //     },
-  //   ]),
-  // )
   async create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
     return await this.userService.create(createUserDto);
   }
@@ -58,22 +43,12 @@ export class UserController {
   @ApiBody({
     type: UpdateNewUserResDto,
   })
-  @UseInterceptors(
-    UploadSomeFilesCloudinaryInterceptor([
-      { name: 'avatar', maxCount: 1 },
-      { name: 'coverImage', maxCount: 1 },
-    ]),
-  )
+  // @UseInterceptors(
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateNewUserResDto,
-    @UploadedFiles()
-    files: {
-      avatar?: Express.Multer.File[];
-      coverImage?: Express.Multer.File[];
-    },
   ): Promise<UserResponseDto> {
-    return this.userService.update(id, updateUserDto, files);
+    return this.userService.update(id, updateUserDto);
   }
   //read
   @Get()

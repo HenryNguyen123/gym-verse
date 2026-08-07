@@ -206,11 +206,9 @@ export class UserService {
   async update(
     id: number,
     body: UpdateNewUserResDto,
-    files: {
-      avatar?: Express.Multer.File[];
-      coverImage?: Express.Multer.File[];
-    } = {},
   ): Promise<UserResponseDto> {
+    const start = timeNow();
+
     const user = await this.userRepository.findOne({
       where: { id },
       relations: {
@@ -225,16 +223,6 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    // Upload files
-    const [avatarUpload, coverImageUpload] = await Promise.all([
-      files.avatar?.length
-        ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
-        : Promise.resolve(null),
-      files.coverImage?.length
-        ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
-        : Promise.resolve(null),
-    ]);
-
     // Update Profile
 
     await this.profileRepository.update(user.profile.id, {
@@ -243,11 +231,11 @@ export class UserService {
       birthday: body.birthday ?? user.profile.birthday,
       phone: body.phone ?? user.profile.phone,
 
-      avatar: avatarUpload?.secure_url ?? user.profile.avatar,
-      avatarPublicId: avatarUpload?.public_id ?? user.profile.avatarPublicId,
-      coverImage: coverImageUpload?.secure_url ?? user.profile.coverImage,
+      avatar: body.avatarUrl ?? user.profile.avatar,
+      avatarPublicId: body.avatarPublicId ?? user.profile.avatarPublicId,
+      coverImage: body.coverImageUrl ?? user.profile.coverImage,
       coverImagePublicId:
-        coverImageUpload?.public_id ?? user.profile.coverImagePublicId,
+        body.coverImagePublicId ?? user.profile.coverImagePublicId,
 
       bio: body.bio ?? user.profile.bio,
       height: body.height ?? user.profile.height,
@@ -260,6 +248,7 @@ export class UserService {
       country: body.country ?? user.profile.country,
       privacySetting: body.privacySetting ?? user.profile.privacySetting,
     });
+    measureTime('update profile', start);
 
     // Update Role
 
@@ -291,6 +280,7 @@ export class UserService {
 
       await this.userRoleRepository.save(userRole);
     }
+    measureTime('update role', start);
 
     // Reload
     const result = await this.userRepository.findOne({
@@ -306,6 +296,7 @@ export class UserService {
     if (!result) {
       throw new NotFoundException('User not found');
     }
+    measureTime('update successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
       excludeExtraneousValues: true,
@@ -313,6 +304,7 @@ export class UserService {
   }
   //read
   async read(): Promise<UserResponseDto[]> {
+    const start = timeNow();
     const users = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.profile', 'profile')
@@ -356,6 +348,7 @@ export class UserService {
         'role.code',
       ])
       .getMany();
+    measureTime('get all user successfuly', start);
 
     return plainToInstance(UserResponseDto, users, {
       excludeExtraneousValues: true,
@@ -363,6 +356,7 @@ export class UserService {
   }
   //find user by id
   async findById(id: number): Promise<UserResponseDto> {
+    const start = timeNow();
     const user = await this.userRepository.findOne({
       where: { id },
       relations: {
@@ -376,6 +370,7 @@ export class UserService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    measureTime('find user by id', start);
 
     return plainToInstance(UserResponseDto, user, {
       excludeExtraneousValues: true,
@@ -386,6 +381,7 @@ export class UserService {
     body: UpdateStatusUserDto,
     id: number,
   ): Promise<UserResponseDto> {
+    const start = timeNow();
     const user = await this.userRepository.findOne({
       where: { id },
     });
@@ -415,6 +411,7 @@ export class UserService {
     if (!updatedUser) {
       throw new NotFoundException('User not found');
     }
+    measureTime('update status successfuly', start);
 
     return plainToInstance(UserResponseDto, updatedUser, {
       excludeExtraneousValues: true,

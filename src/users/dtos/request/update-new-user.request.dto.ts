@@ -65,20 +65,36 @@ export class UpdateNewUserResDto {
   phone?: string;
 
   @ApiProperty({
-    type: 'string',
-    format: 'binary',
     required: false,
   })
   @IsOptional()
-  avatar?: Express.Multer.File;
+  @IsString()
+  @MinLength(3)
+  avatarUrl?: string;
 
   @ApiProperty({
-    type: 'string',
-    format: 'binary',
     required: false,
   })
   @IsOptional()
-  coverImage?: Express.Multer.File;
+  @IsString()
+  @MinLength(3)
+  avatarPublicId?: string;
+
+  @ApiProperty({
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  coverImageUrl?: string;
+
+  @ApiProperty({
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  coverImagePublicId?: string;
 
   @ApiProperty({
     example: 'Fitness enthusiast',

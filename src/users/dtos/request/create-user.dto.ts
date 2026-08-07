@@ -25,6 +25,7 @@ export class CreateUserDto {
     example: 'test@gmail.com',
     required: true,
   })
+  @MaxLength(150)
   @IsEmail()
   @IsNotEmpty()
   email!: string;
@@ -35,12 +36,12 @@ export class CreateUserDto {
   })
   @IsString()
   @MinLength(3)
-  @MaxLength(20)
+  @MaxLength(30)
   @IsNotEmpty()
   userName!: string;
 
   @ApiProperty({
-    example: 'password',
+    example: '123456',
     required: true,
   })
   @IsString()
@@ -95,22 +96,6 @@ export class CreateUserDto {
   @MinLength(10)
   @MaxLength(15)
   phone?: string;
-
-  // @ApiProperty({
-  //   type: 'string',
-  //   format: 'binary',
-  //   required: false,
-  // })
-  // @IsOptional()
-  // avatar?: Express.Multer.File;
-
-  // @ApiProperty({
-  //   type: 'string',
-  //   format: 'binary',
-  //   required: false,
-  // })
-  // @IsOptional()
-  // coverImage?: Express.Multer.File;
 
   @ApiProperty({
     required: false,
