@@ -8,7 +8,7 @@ import { MailService } from 'src/mails/services/mail.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import 'dotenv/config';
-import { UserMailProcesor } from 'src/bullMQ-worker/processors/mails/users/user-mail.processor.bullMQWorker';
+import { UserMailProcesor } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 
 @Module({
   imports: [

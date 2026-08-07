@@ -12,6 +12,7 @@ import { VerifyToken } from 'src/auth/entities/verify-token.entity';
 import { MailModule } from 'src/mails/mail.module';
 import { ResetPasswordToken } from 'src/auth/entities/reset-password-token.entity';
 import { JwtModule, JwtService } from '@nestjs/jwt';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
@@ -27,6 +28,9 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
     JwtModule.register({
       secret: process.env.JWT_ACCESS_TOKEN_SECRET_KEY,
       signOptions: { expiresIn: '1d' },
+    }),
+    BullModule.registerQueue({
+      name: 'mail',
     }),
     MailModule,
   ],

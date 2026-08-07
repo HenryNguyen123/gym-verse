@@ -11,7 +11,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
@@ -38,7 +38,6 @@ export class UserController {
   }
   //update
   @Patch(':id')
-  @ApiConsumes('multipart/form-data')
   // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   @ApiBody({
     type: UpdateNewUserResDto,

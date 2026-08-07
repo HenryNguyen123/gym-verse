@@ -11,11 +11,9 @@ import { Queue } from 'bullmq';
 import { plainToInstance } from 'class-transformer';
 import { randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
-import { MailJobName } from 'src/bullMQ-worker/processors/mails/users/user-mail.processor.bullMQWorker';
-import { CloudinaryService } from 'src/cloudinary/services/cloudinary.service';
+import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 import { hashPassword } from 'src/commons/utils/password.util';
 import { measureTime, timeNow } from 'src/commons/utils/performance.util';
-import { MailService } from 'src/mails/services/mail.service';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
 import { RoleEnum } from 'src/roles/enums/role.enum';
@@ -43,8 +41,6 @@ export class UserService {
     @InjectRepository(VerifyToken)
     private readonly verifyTokenRepository: Repository<VerifyToken>,
     private readonly configService: ConfigService,
-    private readonly mailService: MailService,
-    private readonly cloudinaryService: CloudinaryService,
   ) {}
   //create user
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
@@ -218,6 +214,7 @@ export class UserService {
         },
       },
     });
+    measureTime('get user', start);
 
     if (!user) {
       throw new NotFoundException('User not found');

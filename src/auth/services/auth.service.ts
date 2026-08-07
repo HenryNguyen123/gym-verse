@@ -26,16 +26,21 @@ import { Profile } from 'src/users/entities/profile.entity';
 import { Role } from 'src/roles/entities/role.entity';
 import { RoleEnum } from 'src/roles/enums/role.enum';
 import { UserRole } from 'src/roles/entities/user-role.entity';
-import { pathFileName } from 'src/commons/utils/path-file-name.util';
 import { MailService } from 'src/mails/services/mail.service';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
 import { VerifyDto } from 'src/auth/dtos/request/verify.request.dto';
 import { ResetPasswordToken } from 'src/auth/entities/reset-password-token.entity';
+import { measureTime, timeNow } from 'src/commons/utils/performance.util';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 
 @Injectable()
 export class AuthService {
   constructor(
+    @InjectQueue('mail')
+    private readonly mailQueue: Queue,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
@@ -198,19 +203,28 @@ export class AuthService {
   }
 
   // step: register
-  async register(
-    registerDto: RegisterDto,
-    file: Express.Multer.File | null,
-    path: string,
-  ) {
-    const { email, password, userName, fullName, gender, birthday, phone } =
-      registerDto;
+  async register(registerDto: RegisterDto) {
+    const start = timeNow();
+    const {
+      email,
+      password,
+      userName,
+      fullName,
+      gender,
+      birthday,
+      phone,
+      avatarUrl,
+      avatarPublicId,
+      coverImageUrl,
+      coverImagePublicId,
+    } = registerDto;
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     // const RoleUserCode = RoleCodeEnum.USER;
     // check user exist
     const user = await this.userRepository.findOne({
       where: [{ email }, { userName }],
     });
+    measureTime('get user', start);
     if (user) {
       throw new ConflictException('Email or username already exists');
     }
@@ -224,19 +238,19 @@ export class AuthService {
     });
     await this.userRepository.save(userEntity);
     // create profile
-    let pathAvatar: string | null = null;
-    if (file) {
-      pathAvatar = pathFileName(file, path);
-    }
     const profileEntity = this.profileRepository.create({
       user: userEntity,
       fullName,
       gender,
       birthday,
       phone,
-      avatar: pathAvatar ?? undefined,
+      avatar: avatarUrl,
+      avatarPublicId,
+      coverImage: coverImageUrl,
+      coverImagePublicId,
     });
     await this.profileRepository.save(profileEntity);
+    measureTime('create profile', start);
     // get Role
     const role = await this.roleRepository.findOneBy({
       code: RoleEnum.USER,
@@ -250,6 +264,7 @@ export class AuthService {
       role,
     });
     await this.userRoleRepository.save(userRoleEntity);
+    measureTime('create role', start);
     // send verify mail
     const uuid = randomUUID();
     // check verify token
@@ -268,12 +283,34 @@ export class AuthService {
       expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
     await this.verifyTokenRepository.save(verifyTokenEntity);
-    await this.mailService.sendVerifyMail(
-      email,
-      profileEntity.fullName,
-      `${frontendUrl}/verify?token=${uuid}`,
-      '24h',
+    measureTime('create verify token', start);
+
+    //send mail with redis
+    // await this.mailService.sendVerifyMail(
+    //   email,
+    //   profileEntity.fullName,
+    //   `${frontendUrl}/verify?token=${uuid}`,
+    //   '24h',
+    // );
+    await this.mailQueue.add(
+      MailJobName.SEND_VERIFY_MAIL,
+      {
+        mail: email,
+        fullName: profileEntity.fullName,
+        verifyLink: `${frontendUrl}/verify?token=${uuid}`,
+        expireTime: '24h',
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 3000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
     );
+    measureTime('register successfuly', start);
     return {
       stastus: 'successfuly',
     };
