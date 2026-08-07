@@ -36,27 +36,20 @@ export class UserController {
   @ApiBody({
     type: CreateUserDto,
   })
-  @UseInterceptors(
-    UploadSomeFilesCloudinaryInterceptor([
-      {
-        name: 'avatar',
-        maxCount: 1,
-      },
-      {
-        name: 'coverImage',
-        maxCount: 1,
-      },
-    ]),
-  )
-  async create(
-    @Body() createUserDto: CreateUserDto,
-    @UploadedFiles()
-    files: {
-      avatar?: Express.Multer.File[];
-      coverImage?: Express.Multer.File[];
-    },
-  ): Promise<UserResponseDto> {
-    return await this.userService.create(createUserDto, files);
+  // @UseInterceptors(
+  //   UploadSomeFilesCloudinaryInterceptor([
+  //     {
+  //       name: 'avatar',
+  //       maxCount: 1,
+  //     },
+  //     {
+  //       name: 'coverImage',
+  //       maxCount: 1,
+  //     },
+  //   ]),
+  // )
+  async create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    return await this.userService.create(createUserDto);
   }
   //update
   @Patch(':id')

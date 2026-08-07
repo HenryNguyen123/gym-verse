@@ -47,13 +47,7 @@ export class UserService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
   //create user
-  async create(
-    createUserDto: CreateUserDto,
-    files: {
-      avatar?: Express.Multer.File[];
-      coverImage?: Express.Multer.File[];
-    } = {},
-  ): Promise<UserResponseDto> {
+  async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const start = timeNow();
 
@@ -68,6 +62,10 @@ export class UserService {
       bio,
       height,
       weight,
+      avatarUrl,
+      avatarPublicId,
+      coverImageUrl,
+      coverImagePublicId,
       bodyFat,
       goal,
       fitnessLevel,
@@ -87,15 +85,15 @@ export class UserService {
     }
 
     // Upload files
-    const [avatarUpload, coverImageUpload] = await Promise.all([
-      files.avatar?.length
-        ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
-        : Promise.resolve(null),
-      files.coverImage?.length
-        ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
-        : Promise.resolve(null),
-    ]);
-    measureTime('upload image in cloudinary', start);
+    // const [avatarUpload, coverImageUpload] = await Promise.all([
+    //   files.avatar?.length
+    //     ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
+    //     : Promise.resolve(null),
+    //   files.coverImage?.length
+    //     ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
+    //     : Promise.resolve(null),
+    // ]);
+    // measureTime('upload image in cloudinary', start);
 
     // Hash password
     const hashedPassword = await hashPassword(password);
@@ -116,10 +114,10 @@ export class UserService {
       gender,
       birthday,
       phone,
-      avatar: avatarUpload?.secure_url ?? undefined,
-      avatarPublicId: avatarUpload?.public_id ?? undefined,
-      coverImage: coverImageUpload?.secure_url ?? undefined,
-      coverImagePublicId: coverImageUpload?.public_id ?? undefined,
+      avatar: avatarUrl,
+      avatarPublicId,
+      coverImage: coverImageUrl,
+      coverImagePublicId,
       bio,
       height,
       weight,
@@ -132,6 +130,7 @@ export class UserService {
       privacySetting,
     });
     await this.profileRepository.save(profile);
+    measureTime('create profile', start);
 
     // Role
     const role = await this.roleRepository.findOneBy({
@@ -146,6 +145,7 @@ export class UserService {
         role,
       }),
     );
+    measureTime('create role', start);
 
     // Verify token
     const token = randomUUID();
