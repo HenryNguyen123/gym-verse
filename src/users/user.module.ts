@@ -11,10 +11,14 @@ import { MailModule } from 'src/mails/mail.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { CloudinaryService } from 'src/cloudinary/services/cloudinary.service';
 import { CloudinaryModule } from 'src/cloudinary/cloudinary.module';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Profile, Role, UserRole, VerifyToken]),
+    BullModule.registerQueue({
+      name: 'mail',
+    }),
     AuthModule,
     MailModule,
     CloudinaryModule,

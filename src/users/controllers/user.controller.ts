@@ -84,7 +84,7 @@ export class UserController {
   }
   //read
   @Get()
-  @UseGuards(JwtAuthGuard, RoleAdminGuard)
+  // @UseGuards(JwtAuthGuard, RoleAdminGuard)
   async read(): Promise<UserResponseDto[]> {
     return await this.userService.read();
   }

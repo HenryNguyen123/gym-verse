@@ -27,7 +27,7 @@ export class RedisService implements OnModuleDestroy {
   // step: get value
   async get<T>(key: string): Promise<T | null> {
     const value = await this.client.get(key);
-    return value ? JSON.parse(value) : null;
+    return value ? (JSON.parse(value) as T) : null;
   }
 
   // step: delete value
@@ -55,7 +55,7 @@ export class RedisService implements OnModuleDestroy {
   }
 
   // step: close connection
-  onModuleDestroy() {
-    this.client.quit();
+  async onModuleDestroy() {
+    await this.client.quit();
   }
 }

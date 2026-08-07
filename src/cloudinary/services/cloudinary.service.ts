@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { v2 as Cloudinary } from 'cloudinary';
 import { UploadApiResponse } from 'cloudinary';
 import { Readable } from 'stream';
+import 'dotenv/config';
 
 @Injectable()
 export class CloudinaryService {
@@ -56,5 +57,24 @@ export class CloudinaryService {
     );
 
     return Promise.all(uploadPromises);
+  }
+  // get signature
+  getSignature() {
+    const timestamp = Math.round(Date.now() / 100);
+    const signature = this.cloudinary.utils.api_sign_request(
+      {
+        timestamp,
+        folder: 'gymverse',
+      },
+      process.env.CLOUDINARY_API_SECRET!,
+    );
+
+    return {
+      timestamp,
+      signature,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      folder: 'gymverse',
+    };
   }
 }

@@ -1,3 +1,4 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   ConflictException,
   Injectable,
@@ -6,11 +7,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { plainToInstance } from 'class-transformer';
 import { randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
+import { MailJobName } from 'src/bullMQ-worker/processors/mails/users/user-mail.processor.bullMQWorker';
 import { CloudinaryService } from 'src/cloudinary/services/cloudinary.service';
 import { hashPassword } from 'src/commons/utils/password.util';
+import { measureTime, timeNow } from 'src/commons/utils/performance.util';
 import { MailService } from 'src/mails/services/mail.service';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
@@ -26,6 +30,8 @@ import { Repository } from 'typeorm';
 @Injectable()
 export class UserService {
   constructor(
+    @InjectQueue('mail')
+    private readonly mailQueue: Queue,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Profile)
@@ -49,6 +55,7 @@ export class UserService {
     } = {},
   ): Promise<UserResponseDto> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const start = timeNow();
 
     const {
       email,
@@ -88,6 +95,8 @@ export class UserService {
         ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
         : Promise.resolve(null),
     ]);
+    measureTime('upload image in cloudinary', start);
+
     // Hash password
     const hashedPassword = await hashPassword(password);
 
@@ -152,12 +161,25 @@ export class UserService {
     );
 
     // Send mail
-    await this.mailService.sendVerifyMail(
-      user.email,
-      profile.fullName,
-      `${frontendUrl}/verify?token=${token}`,
-      '24h',
+    await this.mailQueue.add(
+      MailJobName.SEND_VERIFY_MAIL,
+      {
+        mail: user.email,
+        fullName: profile.fullName,
+        verifyLink: `${frontendUrl}/verify?token=${token}`,
+        expireTime: '24h',
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 3000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
     );
+    measureTime('send mail redis', start);
 
     const result = await this.userRepository.findOne({
       where: {
@@ -174,6 +196,7 @@ export class UserService {
     if (!result) {
       throw new NotFoundException('User not found');
     }
+    measureTime('successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
       excludeExtraneousValues: true,
@@ -311,7 +334,9 @@ export class UserService {
         'profile.id',
         'profile.fullName',
         'profile.avatar',
+        'profile.avatarPublicId',
         'profile.coverImage',
+        'profile.coverImagePublicId',
         'profile.bio',
         'profile.gender',
         'profile.birthday',

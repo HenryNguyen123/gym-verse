@@ -12,14 +12,14 @@ export class MailService {
   //step: send verify mail
   async sendVerifyMail(
     to: string,
-    name: string,
-    verify_link: string,
-    expire_time: string,
+    fullName: string,
+    verifyLink: string,
+    expireTime: string,
   ) {
     await this.mailUtil.send(to, 'verify', './verify', {
-      name,
-      verify_link,
-      expire_time,
+      fullName,
+      verifyLink,
+      expireTime,
       year: new Date().getFullYear(),
     });
   }
@@ -27,12 +27,12 @@ export class MailService {
   //step: send forget password
   async sendForgotPasswordMail(
     to: string,
-    name: string,
+    fullName: string,
     resetLink: string,
     resetTime: string,
   ) {
     await this.mailUtil.send(to, 'forget pasword', './forget-password', {
-      name,
+      fullName,
       resetLink,
       resetTime,
     });
