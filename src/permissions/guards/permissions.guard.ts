@@ -27,17 +27,19 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const user = request['user'] as IPayloadJWTLogin;
 
-    if (!user || !user.permissionCodes?.length) {
+    if (!user) {
       throw new ForbiddenException('No permissions assigned');
     }
+    // if (!user || !user.permissionCodes?.length) {
+    //   throw new ForbiddenException('No permissions assigned');
+    // }
+    // const hasPermission = requiredPermissions.every((permission) =>
+    //   user.permissionCodes.includes(permission),
+    // );
 
-    const hasPermission = requiredPermissions.every((permission) =>
-      user.permissionCodes.includes(permission),
-    );
-
-    if (!hasPermission) {
-      throw new ForbiddenException('Permission denied');
-    }
+    // if (!hasPermission) {
+    //   throw new ForbiddenException('Permission denied');
+    // }
 
     return true;
   }

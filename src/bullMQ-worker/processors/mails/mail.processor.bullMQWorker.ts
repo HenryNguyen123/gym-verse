@@ -3,13 +3,20 @@ import { Job } from 'bullmq';
 import { MailService } from 'src/mails/services/mail.service';
 export enum MailJobName {
   SEND_VERIFY_MAIL = 'send-verify-mail',
-  SEND_RESET_PASSWORD = 'send-reset-password',
+  SEND_FORGET_PASSWORD = 'send-forget-password',
+  // SEND_RESET_PASSWORD = 'send-reset-password',
 }
 interface SendVerifyMailType {
   mail: string;
   fullName: string;
   verifyLink: string;
   expireTime: string;
+}
+interface SendForgetMailType {
+  mail: string;
+  fullName: string;
+  resetLink: string;
+  resetTime: string;
 }
 @Processor('mail')
 export class UserMailProcesor extends WorkerHost {
@@ -29,8 +36,20 @@ export class UserMailProcesor extends WorkerHost {
         );
         break;
       }
+      case MailJobName.SEND_FORGET_PASSWORD: {
+        const forgetMail = job.data as SendForgetMailType;
+        const to: string = forgetMail.mail;
+        await this.mailService.sendForgotPasswordMail(
+          to,
+          forgetMail.fullName,
+          forgetMail.resetLink,
+          forgetMail.resetTime,
+        );
+        break;
+      }
       default:
-        throw new Error(`Unknown mail job: ${job.name}`);
+        throw new Error(`Unknown mail job`);
+      // throw new Error(`Unknown mail job: ${job.name}`);
     }
   }
 }

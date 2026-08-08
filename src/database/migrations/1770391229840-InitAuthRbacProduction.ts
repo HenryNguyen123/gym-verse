@@ -148,24 +148,24 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
     `);
 
     // RESET PASSWORD TOKEN
-    // await queryRunner.query(`
-    //   CREATE TABLE reset_password_tokens (
-    //     id SERIAL PRIMARY KEY,
-    //     token TEXT NOT NULL UNIQUE,
+    await queryRunner.query(`
+      CREATE TABLE reset_password_tokens (
+        id SERIAL PRIMARY KEY,
+        token TEXT NOT NULL UNIQUE,
 
-    //     user_id BIGINT NOT NULL,
+        user_id BIGINT NOT NULL,
 
-    //     expired_at TIMESTAMP NOT NULL,
-    //     is_used BOOLEAN DEFAULT FALSE,
+        expired_at TIMESTAMP NOT NULL,
+        is_used BOOLEAN DEFAULT FALSE,
 
-    //     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    //     CONSTRAINT fk_rpt_user
-    //       FOREIGN KEY (user_id)
-    //       REFERENCES users(id)
-    //       ON DELETE CASCADE
-    //   )
-    // `);
+        CONSTRAINT fk_rpt_user
+          FOREIGN KEY (user_id)
+          REFERENCES users(id)
+          ON DELETE CASCADE
+      )
+    `);
 
     // AUDIT LOGS
     await queryRunner.query(`

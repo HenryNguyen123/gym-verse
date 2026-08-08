@@ -16,7 +16,7 @@ export class RedisService implements OnModuleDestroy {
   }
 
   // step: set value
-  async set(key: string, value: string, ttl?: number) {
+  async set(key: string, value: any, ttl?: number) {
     if (ttl) {
       await this.client.set(key, JSON.stringify(value), 'EX', ttl);
     } else {
@@ -28,6 +28,25 @@ export class RedisService implements OnModuleDestroy {
   async get<T>(key: string): Promise<T | null> {
     const value = await this.client.get(key);
     return value ? (JSON.parse(value) as T) : null;
+  }
+
+  //step: get or set
+  async getOrSet<T>(
+    key: string,
+    callback: () => Promise<T>,
+    ttl?: number,
+  ): Promise<T> {
+    const cached = await this.get<T>(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    const data = await callback();
+
+    await this.set(key, data, ttl);
+
+    return data;
   }
 
   // step: delete value

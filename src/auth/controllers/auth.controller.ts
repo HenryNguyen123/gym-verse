@@ -56,6 +56,9 @@ export class AuthController {
   // step: send mail verify
   @Post('verify')
   @HttpCode(HttpStatus.OK)
+  @ApiBody({
+    type: VerifyDto,
+  })
   async sendMailVerify(@Body() body: VerifyDto): Promise<void> {
     await this.authService.sendMailVerify(body.email);
   }
@@ -63,6 +66,9 @@ export class AuthController {
   // step: forgot password
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @ApiBody({
+    type: VerifyDto,
+  })
   async forgotPassword(@Body() body: VerifyDto): Promise<void> {
     await this.authService.forgotPassword(body);
   }

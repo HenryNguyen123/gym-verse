@@ -14,6 +14,7 @@ import { VerifyToken } from 'src/auth/entities/verify-token.entity';
 import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 import { hashPassword } from 'src/commons/utils/password.util';
 import { measureTime, timeNow } from 'src/commons/utils/performance.util';
+import { RedisService } from 'src/redis/redis.service';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
 import { RoleEnum } from 'src/roles/enums/role.enum';
@@ -24,12 +25,14 @@ import { UserResponseDto } from 'src/users/dtos/response/user.response.dto';
 import { Profile } from 'src/users/entities/profile.entity';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
+import 'dotenv/config';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectQueue('mail')
     private readonly mailQueue: Queue,
+    private readonly redisService: RedisService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Profile)
@@ -46,7 +49,6 @@ export class UserService {
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const start = timeNow();
-
     const {
       email,
       password,
@@ -71,11 +73,14 @@ export class UserService {
       privacySetting,
     } = createUserDto;
 
+    // get and check exists all user and set or get in redis
+    const cacheUsers = await this.read();
+    measureTime('get all user', start);
     // Check email & username
-    const existedUser = await this.userRepository.findOne({
-      where: [{ email }, { userName }],
-    });
-
+    const existedUser = cacheUsers.some(
+      (u) => u.email === email || u.userName === userName,
+    );
+    measureTime('check user successfuly', start);
     if (existedUser) {
       throw new ConflictException('Email or username already exists');
     }
@@ -204,16 +209,13 @@ export class UserService {
     body: UpdateNewUserResDto,
   ): Promise<UserResponseDto> {
     const start = timeNow();
-
-    const user = await this.userRepository.findOne({
-      where: { id },
-      relations: {
-        profile: true,
-        userRoles: {
-          role: true,
-        },
-      },
-    });
+    const cacheKeys = [
+      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    ];
+    const cacheUsers = await this.read();
+    const user = cacheUsers.find((u) => u.id === id);
     measureTime('get user', start);
 
     if (!user) {
@@ -293,6 +295,16 @@ export class UserService {
     if (!result) {
       throw new NotFoundException('User not found');
     }
+
+    //del redis exists
+    for (const key of cacheKeys) {
+      await this.redisService.del(key);
+      measureTime(`delete users from redis: ${key}`, start);
+      // return cacheUser;
+    }
+    //set new all users in cached
+    await this.read();
+    measureTime('set new all users successfuly', start);
     measureTime('update successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
@@ -302,6 +314,19 @@ export class UserService {
   //read
   async read(): Promise<UserResponseDto[]> {
     const start = timeNow();
+    const cacheKeys = [
+      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    ];
+    //check redis
+    for (const key of cacheKeys) {
+      const cacheUser = await this.redisService.get<UserResponseDto[]>(key);
+      if (cacheUser) {
+        measureTime(`get users from redis: ${key}`, start);
+        return cacheUser;
+      }
+    }
     const users = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.profile', 'profile')
@@ -347,9 +372,29 @@ export class UserService {
       .getMany();
     measureTime('get all user successfuly', start);
 
-    return plainToInstance(UserResponseDto, users, {
+    const result = plainToInstance(UserResponseDto, users, {
       excludeExtraneousValues: true,
     });
+
+    // save redis
+    await Promise.all([
+      this.redisService.set(
+        process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+        result,
+        5 * 60,
+      ),
+      this.redisService.set(
+        process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+        result,
+        5 * 60,
+      ),
+      this.redisService.set(
+        process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+        result,
+        5 * 60,
+      ),
+    ]);
+    return result;
   }
   //find user by id
   async findById(id: number): Promise<UserResponseDto> {

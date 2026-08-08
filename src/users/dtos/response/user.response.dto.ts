@@ -4,6 +4,9 @@ import { UserRoleResponseDto } from 'src/roles/dtos/response/user-role.response.
 
 export class UserResponseDto {
   @Expose()
+  id!: number;
+
+  @Expose()
   userName!: string;
 
   @Expose()

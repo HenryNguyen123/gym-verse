@@ -322,6 +322,7 @@ export class AuthService {
 
   // step: send mail verify
   async sendMailVerify(email: string) {
+    const start = timeNow();
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const uuid = randomUUID();
     const user = await this.userRepository.findOne({
@@ -335,6 +336,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    measureTime('check user successfuly', start);
     // check redis
     const keyRedis = `verify-${email}-${user.id}`;
     const getRedis = Number((await this.redisService.get(keyRedis)) || 0);
@@ -353,6 +355,7 @@ export class AuthService {
         userId: user.id,
       });
     }
+    measureTime('check redis successfuly', start);
     // create verify token
     const verifyTokenEntity = this.verifyTokenRepository.create({
       userId: user.id,
@@ -360,16 +363,37 @@ export class AuthService {
       expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
     await this.verifyTokenRepository.save(verifyTokenEntity);
-    await this.mailService.sendVerifyMail(
-      email,
-      user.profile.fullName,
-      `${frontendUrl}/verify?token=${uuid}`,
-      '24h',
+    measureTime('verify token successfuly', start);
+    // await this.mailService.sendVerifyMail(
+    //   email,
+    //   user.profile.fullName,
+    //   `${frontendUrl}/verify?token=${uuid}`,
+    //   '24h',
+    // );
+    await this.mailQueue.add(
+      MailJobName.SEND_VERIFY_MAIL,
+      {
+        mail: email,
+        fullName: user.profile.fullName,
+        verifyLink: `${frontendUrl}/verify?token=${uuid}`,
+        expireTime: '24h',
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 3000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
     );
+    measureTime('sendmail successfuly', start);
   }
 
   // step: forgot password
   async forgotPassword(body: VerifyDto) {
+    const start = timeNow();
     const email = body.email;
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const uuid = randomBytes(32).toString('hex');
@@ -385,6 +409,7 @@ export class AuthService {
     if (getRedis >= 3) {
       throw new BadRequestException('Please try again later');
     }
+    measureTime('check redis successfuly', start);
     // step: check user exist
     const user = await this.userRepository.findOne({
       where: {
@@ -397,10 +422,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    measureTime('check user successfuly', start);
     // step: exisit verify email
-    if (!user.isVerified) {
-      throw new UnauthorizedException('User not verified');
-    }
+    // if (!user.isVerified) {
+    //   throw new UnauthorizedException('User not verified');
+    // }
     // step: check reset password token
     const resetPasswordToken =
       await this.resetPasswordTokenRepository.findOneBy({
@@ -419,12 +445,33 @@ export class AuthService {
       expiredAt: new Date(Date.now() + 15 * 60 * 1000),
     });
     await this.resetPasswordTokenRepository.save(resetPasswordTokenEntity);
-    await this.mailService.sendForgotPasswordMail(
-      email,
-      user.profile.fullName,
-      `${frontendUrl}/forgot-password?token=${hashedToken}`,
-      '15 minutes',
+    measureTime('reset password token successfuly', start);
+
+    // await this.mailService.sendForgotPasswordMail(
+    //   email,
+    //   user.profile.fullName,
+    //   `${frontendUrl}/forgot-password?token=${hashedToken}`,
+    //   '15 minutes',
+    // );
+    await this.mailQueue.add(
+      MailJobName.SEND_FORGET_PASSWORD,
+      {
+        mail: email,
+        fullName: user.profile.fullName,
+        verifyLink: `${frontendUrl}/verify?token=${uuid}`,
+        expireTime: '15 minutes',
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 3000,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
     );
+    measureTime('sendmail successfuly', start);
   }
 
   // step: reset password

@@ -8,6 +8,9 @@ import {
 
 export class ProfileResponseDto {
   @Expose()
+  id!: number;
+
+  @Expose()
   fullName!: string;
 
   @Expose()
