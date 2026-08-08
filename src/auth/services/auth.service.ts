@@ -62,6 +62,7 @@ export class AuthService {
   ) {}
   // step: login
   async login(loginDto: LoginDto, ip: string) {
+    const start = timeNow();
     // data login
     const { email, password } = loginDto;
     const keyAccess = this.configService.get<string>(
@@ -97,6 +98,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    measureTime('get user', start);
     // check redis
     const redisId = `user:${ip}:${user.email}`;
     const countRedis = Number((await this.redisService.get(redisId)) || 0);
@@ -127,9 +129,9 @@ export class AuthService {
     //     return rolePermission.permission.code;
     //   });
     // });
-    const permissionCodes = user.userRoles.flatMap((userRole) =>
-      userRole.role.rolePermissions.map((rp) => rp.permission.code),
-    );
+    // const permissionCodes = user.userRoles.flatMap((userRole) =>
+    //   userRole.role.rolePermissions.map((rp) => rp.permission.code),
+    // );
     const payload: IPayloadLogin = {
       email: user.email,
       userName: user.userName,
@@ -146,7 +148,7 @@ export class AuthService {
     const payloadJWT: IPayloadJWTLogin = {
       sub: user.id,
       roleCode: roleCode,
-      permissionCodes: permissionCodes,
+      // permissionCodes: permissionCodes,
     };
     // generate token
     const accessToken = await this.jwtService.signAsync(payloadJWT, {
@@ -157,6 +159,7 @@ export class AuthService {
       secret: keyRefresh,
       expiresIn: timeRefresh as StringValue,
     });
+    measureTime('create jwt service successfuly', start);
     // save refresh token
     await this.refreshTokenRepository.delete({
       userId: user.id,
@@ -167,6 +170,7 @@ export class AuthService {
       expiresAt: new Date(Date.now() + timeRefreshMs),
     });
     await this.refreshTokenRepository.save(refreshTokenEntity);
+    measureTime('login successfuly', start);
     // response
     return plainToInstance(LoginResponseDto, {
       status: 200,

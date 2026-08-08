@@ -18,7 +18,7 @@ export interface IPayloadLogin {
 export interface IPayloadJWTLogin {
   sub: number;
   roleCode: string[];
-  permissionCodes: string[];
+  // permissionCodes: string[];
   iat?: number;
   exp?: number;
 }
