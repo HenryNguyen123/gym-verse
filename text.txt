@@ -1,0 +1,22 @@
+
+    const { search, page = 1, limit = 10 } = query;
+    const [permissions, total] = await this.permissionRepository.findAndCount({
+      where: search
+        ? [
+            { name: Like(`%${search}%`) },
+            { code: Like(`%${search.toUpperCase()}%`) },
+            { description: Like(`%${search}%`) },
+            { module: Like(`%${search.toUpperCase()}%`) },
+          ]
+        : {},
+      order: {
+        name: 'ASC',
+      },
+      relations: {
+        rolePermissions: {
+          role: true,
+        },
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });

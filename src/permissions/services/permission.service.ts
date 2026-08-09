@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { measureTime, timeNow } from 'src/commons/utils/performance.util';
 import { CreatePermissionRequestDto } from 'src/permissions/dtos/request/create-permission.request.dto';
 import { ListPermissionRequestDto } from 'src/permissions/dtos/request/list-permission.request.dto';
 import { UpdatePermissionRequestDto } from 'src/permissions/dtos/request/update-permission.request.dto';
@@ -13,6 +14,7 @@ import { PaginationPermissionResponseDto } from 'src/permissions/dtos/response/p
 import { PermissionResponseDto } from 'src/permissions/dtos/response/permission-response.response.dto';
 import { Permission } from 'src/permissions/entities/permission.entity';
 import { RolePermission } from 'src/permissions/entities/role-permission.entity';
+import { RedisService } from 'src/redis/redis.service';
 import { Role } from 'src/roles/entities/role.entity';
 import { In, Like, Repository } from 'typeorm';
 
@@ -25,41 +27,51 @@ export class PermissionService {
     private readonly permissionRepository: Repository<Permission>,
     @InjectRepository(RolePermission)
     private readonly rolePermissionRepository: Repository<RolePermission>,
+    private readonly redisService: RedisService,
   ) {}
+  // loading permission
+  private permissionLoading?: Promise<PaginationPermissionResponseDto>;
+  private permissionPaganitionLoading = new Map<
+    string,
+    Promise<PaginationPermissionResponseDto>
+  >();
   // step: get all permission
-  async findAll(
+  async read(
     query: ListPermissionRequestDto,
   ): Promise<PaginationPermissionResponseDto> {
-    const { search, page = 1, limit = 10 } = query;
-    const [permissions, total] = await this.permissionRepository.findAndCount({
-      where: search
-        ? [
-            { name: Like(`%${search}%`) },
-            { code: Like(`%${search.toUpperCase()}%`) },
-            { description: Like(`%${search}%`) },
-            { module: Like(`%${search.toUpperCase()}%`) },
-          ]
-        : {},
-      order: {
-        name: 'ASC',
-      },
-      relations: {
-        rolePermissions: {
-          role: true,
-        },
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-    return plainToInstance(PaginationPermissionResponseDto, {
-      meta: {
-        page,
-        limit,
-        totalItems: total,
-        totalPages: Math.ceil(total / limit),
-      },
-      data: permissions,
-    });
+    const start = timeNow();
+    const ttls = [5, 10, 15];
+
+    // Check Redis
+    for (const ttl of ttls) {
+      const key = this.getPermissionPaginationKey(query, ttl);
+
+      const cached =
+        await this.redisService.get<PaginationPermissionResponseDto>(key);
+
+      if (cached) {
+        measureTime(`get permission from redis: ${key}`, start);
+        return cached;
+      }
+    }
+    // Query key dùng để chống duplicate DB query
+    const { search = '', page = 1, limit = 10 } = query;
+
+    const loadingKey = `${page}:${limit}:${search.toLowerCase()}`;
+    // return permission exists
+    if (this.permissionPaganitionLoading.has(loadingKey)) {
+      measureTime(`return permission loading: ${loadingKey}`, start);
+      return this.permissionPaganitionLoading.get(loadingKey)!;
+    }
+    // first load permission in database
+    const promise = this.LoadPermissionPagination(query);
+    this.permissionPaganitionLoading.set(loadingKey, promise);
+    try {
+      measureTime(`permission loading`, start);
+      return await promise;
+    } finally {
+      this.permissionPaganitionLoading.delete(loadingKey);
+    }
   }
 
   // step: find permission by id
@@ -194,5 +206,96 @@ export class PermissionService {
     return plainToInstance(PermissionResponseDto, permission, {
       excludeExtraneousValues: true,
     });
+  }
+  // step: load permission from database
+  private async LoadPermissionFromDb(): Promise<PermissionResponseDto[]> {
+    const start = timeNow();
+    const result = await this.permissionRepository.find({
+      relations: {
+        rolePermissions: {
+          role: true,
+        },
+      },
+    });
+    if (result.length === 0)
+      throw new NotFoundException('Permission not found');
+    measureTime(`get permission in db`, start);
+    // save redis
+    await Promise.all([
+      this.redisService.set(
+        process.env.REDIS_PERMISSION_ALL_5M ?? 'permission:all:5m',
+        result,
+        5 * 60,
+      ),
+      this.redisService.set(
+        process.env.REDIS_PERMISSION_ALL_10M ?? 'permission:all:10m',
+        result,
+        10 * 60,
+      ),
+      this.redisService.set(
+        process.env.REDIS_PERMISSION_ALL_15M ?? 'permission:all:15m',
+        result,
+        15 * 60,
+      ),
+    ]);
+    return result;
+  }
+  // step: get key load permission pagination from database
+  private getPermissionPaginationKey(
+    query: ListPermissionRequestDto,
+    ttl: number,
+  ): string {
+    const { search = '', page = 1, limit = 10 } = query;
+
+    const prefix =
+      process.env.REDIS_PERMISSION_PAGINATION ?? 'permission:pagination';
+
+    return `${prefix}:${page}:${limit}:${search.toLowerCase()}:${ttl}m`;
+  }
+  // step: load permission pagination from database
+  private async LoadPermissionPagination(
+    query: ListPermissionRequestDto,
+  ): Promise<PaginationPermissionResponseDto> {
+    const start = timeNow();
+    const { search, page = 1, limit = 10 } = query;
+    const ttls = [5, 10, 15];
+    const [permissions, total] = await this.permissionRepository.findAndCount({
+      where: search
+        ? [
+            { name: Like(`%${search}%`) },
+            { code: Like(`%${search.toUpperCase()}%`) },
+            { description: Like(`%${search}%`) },
+            { module: Like(`%${search.toUpperCase()}%`) },
+          ]
+        : {},
+      order: {
+        name: 'ASC',
+      },
+      relations: {
+        rolePermissions: {
+          role: true,
+        },
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    measureTime(`get permission in db`, start);
+    // save redis
+    const result = {
+      meta: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+      data: permissions,
+    };
+    await Promise.all(
+      ttls.map((ttl) => {
+        const key = this.getPermissionPaginationKey(query, ttl);
+        return this.redisService.set(key, result, ttl * 60);
+      }),
+    );
+    return result;
   }
 }

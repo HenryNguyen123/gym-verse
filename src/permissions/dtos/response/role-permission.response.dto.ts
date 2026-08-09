@@ -3,10 +3,10 @@ import { RoleResponseDto } from 'src/roles/dtos/response/role.response.dto';
 
 export class RolePermissionResponseDto {
   @Expose()
-  roleId: number;
+  roleId!: number;
 
   @Expose()
-  permissionId: number;
+  permissionId!: number;
 
   @Expose()
   createdAt?: Date;
@@ -16,5 +16,5 @@ export class RolePermissionResponseDto {
 
   @Expose()
   @Type(() => RoleResponseDto)
-  role: RoleResponseDto;
+  role!: RoleResponseDto;
 }

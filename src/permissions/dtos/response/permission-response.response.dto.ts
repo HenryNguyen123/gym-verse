@@ -3,19 +3,19 @@ import { RolePermissionResponseDto } from 'src/permissions/dtos/response/role-pe
 
 export class PermissionResponseDto {
   @Expose()
-  id: number;
+  id!: number;
 
   @Expose()
-  name: string;
+  name!: string;
 
   @Expose()
-  description: string;
+  description!: string;
 
   @Expose()
-  code: string;
+  code!: string;
 
   @Expose()
-  module: string;
+  module?: string;
 
   @Expose()
   createdAt?: Date;
@@ -25,5 +25,5 @@ export class PermissionResponseDto {
 
   @Expose()
   @Type(() => RolePermissionResponseDto)
-  rolePermissions: RolePermissionResponseDto[];
+  rolePermissions!: RolePermissionResponseDto[];
 }

@@ -8,7 +8,7 @@ export class ListPermissionRequestDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }) => value.trim())
+  @Transform(({ value }) => (value as string).trim())
   @IsString()
   search?: string;
 

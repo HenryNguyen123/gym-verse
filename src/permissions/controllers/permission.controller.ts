@@ -7,7 +7,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Put,
   Query,
 } from '@nestjs/common';
 import { Auth } from 'src/auth/decorators/auth-decorator.decorator';
@@ -29,10 +28,10 @@ export class PermissionController {
   // step: get all permission
   @Get()
   @Auth([RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN])
-  async findAll(
+  async read(
     @Query() query: ListPermissionRequestDto,
   ): Promise<PaginationPermissionResponseDto> {
-    return this.permissionService.findAll(query);
+    return this.permissionService.read(query);
   }
 
   // step: get permission by id

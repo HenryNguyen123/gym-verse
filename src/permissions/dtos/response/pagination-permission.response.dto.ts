@@ -3,7 +3,7 @@ import { PermissionResponseDto } from 'src/permissions/dtos/response/permission-
 
 export class PaginationPermissionResponseDto {
   @Expose()
-  meta: {
+  meta!: {
     page: number;
     limit: number;
     totalItems: number;
@@ -11,5 +11,5 @@ export class PaginationPermissionResponseDto {
   };
 
   @Expose()
-  data: PermissionResponseDto[];
+  data!: PermissionResponseDto[];
 }
