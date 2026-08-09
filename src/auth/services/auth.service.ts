@@ -26,7 +26,6 @@ import { Profile } from 'src/users/entities/profile.entity';
 import { Role } from 'src/roles/entities/role.entity';
 import { RoleEnum } from 'src/roles/enums/role.enum';
 import { UserRole } from 'src/roles/entities/user-role.entity';
-import { MailService } from 'src/mails/services/mail.service';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { VerifyToken } from 'src/auth/entities/verify-token.entity';
 import { VerifyDto } from 'src/auth/dtos/request/verify.request.dto';
@@ -35,6 +34,7 @@ import { measureTime, timeNow } from 'src/commons/utils/performance.util';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
+import { UserService } from 'src/users/services/user.service';
 
 @Injectable()
 export class AuthService {
@@ -58,7 +58,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
-    private readonly mailService: MailService,
+    private readonly userService: UserService,
   ) {}
   // step: login
   async login(loginDto: LoginDto, ip: string) {
@@ -209,6 +209,11 @@ export class AuthService {
   // step: register
   async register(registerDto: RegisterDto) {
     const start = timeNow();
+    const cacheKeys = [
+      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    ];
     const {
       email,
       password,
@@ -224,10 +229,13 @@ export class AuthService {
     } = registerDto;
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     // const RoleUserCode = RoleCodeEnum.USER;
+    // get and check all users into redis
+    const cacheUsers = await this.userService.read();
+    measureTime('get user into redis', start);
     // check user exist
-    const user = await this.userRepository.findOne({
-      where: [{ email }, { userName }],
-    });
+    const user = cacheUsers.find(
+      (u) => u.email === email || u.userName === userName,
+    );
     measureTime('get user', start);
     if (user) {
       throw new ConflictException('Email or username already exists');
@@ -290,12 +298,6 @@ export class AuthService {
     measureTime('create verify token', start);
 
     //send mail with redis
-    // await this.mailService.sendVerifyMail(
-    //   email,
-    //   profileEntity.fullName,
-    //   `${frontendUrl}/verify?token=${uuid}`,
-    //   '24h',
-    // );
     await this.mailQueue.add(
       MailJobName.SEND_VERIFY_MAIL,
       {
@@ -314,6 +316,13 @@ export class AuthService {
         removeOnFail: 100,
       },
     );
+    //delete redis key and reset redis
+    for (const key of cacheKeys) {
+      await this.redisService.del(key);
+    }
+    await this.userService.read();
+    measureTime('reset users redis successfuly', start);
+
     measureTime('register successfuly', start);
     return {
       stastus: 'successfuly',
@@ -325,14 +334,10 @@ export class AuthService {
     const start = timeNow();
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const uuid = randomUUID();
-    const user = await this.userRepository.findOne({
-      where: {
-        email,
-      },
-      relations: {
-        profile: true,
-      },
-    });
+    // get all users into redis
+    const cacheUsers = await this.userService.read();
+    measureTime('get users into redis successfuly', start);
+    const user = cacheUsers.find((u) => u.email === email);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -410,23 +415,18 @@ export class AuthService {
       throw new BadRequestException('Please try again later');
     }
     measureTime('check redis successfuly', start);
+    // step: get users into redis
+    const cacheUsers = await this.userService.read();
     // step: check user exist
-    const user = await this.userRepository.findOne({
-      where: {
-        email,
-      },
-      relations: {
-        profile: true,
-      },
-    });
+    const user = cacheUsers.find((u) => u.email === email);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
     measureTime('check user successfuly', start);
     // step: exisit verify email
-    // if (!user.isVerified) {
-    //   throw new UnauthorizedException('User not verified');
-    // }
+    if (!user.isVerified) {
+      throw new UnauthorizedException('User not verified');
+    }
     // step: check reset password token
     const resetPasswordToken =
       await this.resetPasswordTokenRepository.findOneBy({
@@ -447,12 +447,6 @@ export class AuthService {
     await this.resetPasswordTokenRepository.save(resetPasswordTokenEntity);
     measureTime('reset password token successfuly', start);
 
-    // await this.mailService.sendForgotPasswordMail(
-    //   email,
-    //   user.profile.fullName,
-    //   `${frontendUrl}/forgot-password?token=${hashedToken}`,
-    //   '15 minutes',
-    // );
     await this.mailQueue.add(
       MailJobName.SEND_FORGET_PASSWORD,
       {

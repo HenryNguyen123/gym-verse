@@ -13,6 +13,7 @@ import { MailModule } from 'src/mails/mail.module';
 import { ResetPasswordToken } from 'src/auth/entities/reset-password-token.entity';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { BullModule } from '@nestjs/bullmq';
+import { UserService } from 'src/users/services/user.service';
 
 @Module({
   imports: [
@@ -36,6 +37,6 @@ import { BullModule } from '@nestjs/bullmq';
   ],
   controllers: [AuthController],
   exports: [AuthService, JwtModule],
-  providers: [AuthService, RedisService, JwtService],
+  providers: [AuthService, RedisService, JwtService, UserService],
 })
 export class AuthModule {}

@@ -45,6 +45,8 @@ export class UserService {
     private readonly verifyTokenRepository: Repository<VerifyToken>,
     private readonly configService: ConfigService,
   ) {}
+  // user loading pending
+  private usersLoading?: Promise<UserResponseDto[]>;
   //create user
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
@@ -327,6 +329,112 @@ export class UserService {
         return cacheUser;
       }
     }
+    //return users exists
+    if (this.usersLoading) {
+      measureTime(`user exists`, start);
+      return this.usersLoading;
+    }
+
+    this.usersLoading = this.LoadUsersFromDb();
+    try {
+      measureTime(`get users from db`, start);
+      return await this.usersLoading;
+    } finally {
+      this.usersLoading = undefined;
+    }
+  }
+  //find user by id
+  async findById(id: number): Promise<UserResponseDto> {
+    const start = timeNow();
+    //get user by redis
+    const cacheUsers = await this.read();
+    const user = cacheUsers.find((u) => u.id === id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    measureTime('find user by id', start);
+    return plainToInstance(UserResponseDto, user, {
+      excludeExtraneousValues: true,
+    });
+  }
+  //update status user
+  async updateStatus(
+    body: UpdateStatusUserDto,
+    id: number,
+  ): Promise<UserResponseDto> {
+    const start = timeNow();
+    const cacheKeys = [
+      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    ];
+    //get user by redis
+    const cacheUsers = await this.read();
+    const user = cacheUsers.find((u) => u.id === id);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const result = await this.userRepository.update(id, {
+      isActive: body.isActive,
+    });
+
+    if (!result.affected) {
+      throw new InternalServerErrorException('Failed to update user status');
+    }
+
+    const updatedUser = await this.userRepository.findOne({
+      where: { id },
+      relations: {
+        profile: true,
+        userRoles: {
+          role: true,
+        },
+      },
+    });
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found');
+    }
+    //del and update of users into redis
+    for (const key of cacheKeys) {
+      await this.redisService.del(key);
+    }
+    await this.read();
+    measureTime('update all users successfuly', start);
+    measureTime('update status successfuly', start);
+
+    return plainToInstance(UserResponseDto, updatedUser, {
+      excludeExtraneousValues: true,
+    });
+  }
+  //delete user
+  async delete(id: number): Promise<void> {
+    const start = timeNow();
+    const cacheKeys = [
+      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    ];
+    // const user = await this.userRepository.findOne({
+    //   where: { id: body.id },
+    // });
+    // if (!user) throw new InternalServerErrorException('user not exist!');
+    // await this.userRepository.delete(body.id);
+    const resultRoleUser = await this.userRepository.delete(id);
+    if (resultRoleUser.affected === 0)
+      throw new NotFoundException('User not found');
+    measureTime('update status successfuly', start);
+    //del and update of users into redis
+    for (const key of cacheKeys) {
+      await this.redisService.del(key);
+    }
+    await this.read();
+    measureTime('del & update redis successfuly', start);
+  }
+  //load users from data
+  private async LoadUsersFromDb(): Promise<UserResponseDto[]> {
     const users = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.profile', 'profile')
@@ -370,8 +478,6 @@ export class UserService {
         'role.code',
       ])
       .getMany();
-    measureTime('get all user successfuly', start);
-
     const result = plainToInstance(UserResponseDto, users, {
       excludeExtraneousValues: true,
     });
@@ -386,88 +492,14 @@ export class UserService {
       this.redisService.set(
         process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
         result,
-        5 * 60,
+        10 * 60,
       ),
       this.redisService.set(
         process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
         result,
-        5 * 60,
+        15 * 60,
       ),
     ]);
     return result;
-  }
-  //find user by id
-  async findById(id: number): Promise<UserResponseDto> {
-    const start = timeNow();
-    const user = await this.userRepository.findOne({
-      where: { id },
-      relations: {
-        profile: true,
-        userRoles: {
-          role: true,
-        },
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    measureTime('find user by id', start);
-
-    return plainToInstance(UserResponseDto, user, {
-      excludeExtraneousValues: true,
-    });
-  }
-  //update status user
-  async updateStatus(
-    body: UpdateStatusUserDto,
-    id: number,
-  ): Promise<UserResponseDto> {
-    const start = timeNow();
-    const user = await this.userRepository.findOne({
-      where: { id },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const result = await this.userRepository.update(id, {
-      isActive: body.isActive,
-    });
-
-    if (!result.affected) {
-      throw new InternalServerErrorException('Failed to update user status');
-    }
-
-    const updatedUser = await this.userRepository.findOne({
-      where: { id },
-      relations: {
-        profile: true,
-        userRoles: {
-          role: true,
-        },
-      },
-    });
-
-    if (!updatedUser) {
-      throw new NotFoundException('User not found');
-    }
-    measureTime('update status successfuly', start);
-
-    return plainToInstance(UserResponseDto, updatedUser, {
-      excludeExtraneousValues: true,
-    });
-  }
-  //delete user
-  async delete(id: number): Promise<void> {
-    // const user = await this.userRepository.findOne({
-    //   where: { id: body.id },
-    // });
-    // if (!user) throw new InternalServerErrorException('user not exist!');
-    // await this.userRepository.delete(body.id);
-    const resultRoleUser = await this.userRepository.delete(id);
-    if (resultRoleUser.affected === 0)
-      throw new NotFoundException('User not found');
   }
 }
