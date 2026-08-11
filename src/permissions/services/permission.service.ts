@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { getRedisKey, ttlsRedis } from 'src/commons/utils/get-redis-key.util';
+import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
 import { measureTime, timeNow } from 'src/commons/utils/performance.util';
 import { CreatePermissionRequestDto } from 'src/permissions/dtos/request/create-permission.request.dto';
 import { ListPermissionRequestDto } from 'src/permissions/dtos/request/list-permission.request.dto';
@@ -30,7 +32,7 @@ export class PermissionService {
     private readonly redisService: RedisService,
   ) {}
   // loading permission
-  private permissionLoading?: Promise<PaginationPermissionResponseDto>;
+  private permissionLoading?: Promise<PermissionResponseDto[]>;
   private permissionPaganitionLoading = new Map<
     string,
     Promise<PaginationPermissionResponseDto>
@@ -40,17 +42,23 @@ export class PermissionService {
     query: ListPermissionRequestDto,
   ): Promise<PaginationPermissionResponseDto> {
     const start = timeNow();
-    const ttls = [5, 10, 15];
-
+    const ttls = ttlsRedis;
+    const redisKey =
+      process.env.REDIS_PERMISSION_PAGINATION ?? 'permission:pagination';
+    const queryList = {
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+    };
     // Check Redis
     for (const ttl of ttls) {
-      const key = this.getPermissionPaginationKey(query, ttl);
+      const key = getRedisPaginationKey(queryList, redisKey, ttl);
 
       const cached =
         await this.redisService.get<PaginationPermissionResponseDto>(key);
 
       if (cached) {
-        measureTime(`get permission from redis: ${key}`, start);
+        measureTime(`get permission from redis:${key}:${ttl}ms`, start);
         return cached;
       }
     }
@@ -76,16 +84,11 @@ export class PermissionService {
 
   // step: find permission by id
   async findOne(id: number): Promise<PermissionResponseDto> {
-    const permission = await this.permissionRepository.findOne({
-      where: {
-        id,
-      },
-      relations: {
-        rolePermissions: {
-          role: true,
-        },
-      },
-    });
+    const start = timeNow();
+    const permissionAll = await this.getAllPermission();
+    measureTime(`permission check get all`, start);
+    const permission = permissionAll.find((p) => p.id === id);
+    measureTime(`permission exists`, start);
     if (!permission) {
       throw new NotFoundException('Permission not found');
     }
@@ -98,13 +101,16 @@ export class PermissionService {
   async create(
     body: CreatePermissionRequestDto,
   ): Promise<PermissionResponseDto> {
+    const start = timeNow();
     const { name, code, description, module, roleCodes } = body;
+    // get permision in redis
+    const permissionAll = await this.getAllPermission();
+    measureTime(`permission check get all`, start);
     // check permission exists
-    const permissionExists = await this.permissionRepository.findOne({
-      where: {
-        code,
-      },
-    });
+    const permissionExists = permissionAll.find(
+      (p) => p.code === code || p.name === name,
+    );
+    measureTime(`permission exists`, start);
     if (permissionExists) {
       throw new ConflictException('Permission already exists');
     }
@@ -115,6 +121,7 @@ export class PermissionService {
         code: In(roleCodes),
       },
     });
+    measureTime(`check role exists`, start);
     if (roleExists.length !== roleCodes.length) {
       throw new NotFoundException('Role not found');
     }
@@ -133,6 +140,7 @@ export class PermissionService {
       });
     });
     await this.rolePermissionRepository.save(rolePermissions);
+    measureTime(`permission successfuly`, start);
     return plainToInstance(PermissionResponseDto, permission, {
       excludeExtraneousValues: true,
     });
@@ -143,6 +151,7 @@ export class PermissionService {
     id: number,
     body: UpdatePermissionRequestDto,
   ): Promise<PermissionResponseDto> {
+    const start = timeNow();
     const { name, code, description, module, roleCodes } = body;
     // check roles exists
     if (roleCodes.length === 0) {
@@ -156,12 +165,11 @@ export class PermissionService {
     if (roleExists.length !== roleCodes.length) {
       throw new NotFoundException('Role not found');
     }
+    // get permision in redis
+    const permissionAll = await this.getAllPermission();
+    measureTime(`permission check get all`, start);
     // check permission exists
-    const permission = await this.permissionRepository.findOne({
-      where: {
-        id,
-      },
-    });
+    const permission = permissionAll.find((p) => p.id === id);
     if (!permission) {
       throw new NotFoundException('Permission not found');
     }
@@ -170,10 +178,12 @@ export class PermissionService {
     permission.description = description ? description : permission.description;
     permission.module = module ? module.toUpperCase() : permission.module;
     await this.permissionRepository.save(permission);
+    measureTime(`permission check save`, start);
     // delete role permission
     await this.rolePermissionRepository.delete({
       permission,
     });
+    measureTime(`permission check delete`, start);
     // update role permission
     const rolePermissions = roleExists.map((role) => {
       return this.rolePermissionRepository.create({
@@ -182,6 +192,9 @@ export class PermissionService {
       });
     });
     await this.rolePermissionRepository.save(rolePermissions);
+    await this.getAllPermission();
+    measureTime(`reset permission in redis`, start);
+    measureTime(`permission check update successfuly`, start);
     return plainToInstance(PermissionResponseDto, permission, {
       excludeExtraneousValues: true,
     });
@@ -189,11 +202,12 @@ export class PermissionService {
 
   // step: delete permission by id
   async destroy(id: number): Promise<PermissionResponseDto> {
-    const permission = await this.permissionRepository.findOne({
-      where: {
-        id,
-      },
-    });
+    const start = timeNow();
+    // get permision in redis
+    const permissionAll = await this.getAllPermission();
+    measureTime(`permission in redis`, start);
+    const permission = permissionAll.find((p) => p.id === id);
+    measureTime(`permission check exists`, start);
     if (!permission) {
       throw new NotFoundException('Permission not found');
     }
@@ -203,6 +217,7 @@ export class PermissionService {
     });
     // delete permission
     await this.permissionRepository.delete(id);
+    measureTime(`permission delete successfuly`, start);
     return plainToInstance(PermissionResponseDto, permission, {
       excludeExtraneousValues: true,
     });
@@ -210,6 +225,8 @@ export class PermissionService {
   // step: load permission from database
   private async LoadPermissionFromDb(): Promise<PermissionResponseDto[]> {
     const start = timeNow();
+    const ttls = ttlsRedis;
+    const key = process.env.REDIS_PERMISSION_ALL ?? 'permission:all';
     const result = await this.permissionRepository.find({
       relations: {
         rolePermissions: {
@@ -221,36 +238,43 @@ export class PermissionService {
       throw new NotFoundException('Permission not found');
     measureTime(`get permission in db`, start);
     // save redis
-    await Promise.all([
-      this.redisService.set(
-        process.env.REDIS_PERMISSION_ALL_5M ?? 'permission:all:5m',
-        result,
-        5 * 60,
-      ),
-      this.redisService.set(
-        process.env.REDIS_PERMISSION_ALL_10M ?? 'permission:all:10m',
-        result,
-        10 * 60,
-      ),
-      this.redisService.set(
-        process.env.REDIS_PERMISSION_ALL_15M ?? 'permission:all:15m',
-        result,
-        15 * 60,
-      ),
-    ]);
+    await Promise.all(
+      ttls.map((ttl) => {
+        const redisKey = getRedisKey(key, ttl);
+        return this.redisService.set(redisKey, result, ttl * 60);
+      }),
+    );
     return result;
   }
-  // step: get key load permission pagination from database
-  private getPermissionPaginationKey(
-    query: ListPermissionRequestDto,
-    ttl: number,
-  ): string {
-    const { search = '', page = 1, limit = 10 } = query;
+  // step: load permission from database
+  async getAllPermission(): Promise<PermissionResponseDto[]> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+    const key = process.env.REDIS_PERMISSION_ALL ?? 'permission:all';
+    // Check Redis
+    for (const ttl of ttls) {
+      const redisKey = getRedisKey(key, ttl);
+      const cached =
+        await this.redisService.get<PermissionResponseDto[]>(redisKey);
 
-    const prefix =
-      process.env.REDIS_PERMISSION_PAGINATION ?? 'permission:pagination';
+      if (cached) {
+        measureTime(`get permission from redis:${key}:${ttl}ms`, start);
+        return cached;
+      }
+    }
+    //return permisson exists
+    if (this.permissionLoading) {
+      measureTime(`permission exists`, start);
+      return this.permissionLoading;
+    }
 
-    return `${prefix}:${page}:${limit}:${search.toLowerCase()}:${ttl}m`;
+    this.permissionLoading = this.LoadPermissionFromDb();
+    try {
+      measureTime(`get permission from db`, start);
+      return this.permissionLoading;
+    } finally {
+      this.permissionLoading = undefined;
+    }
   }
   // step: load permission pagination from database
   private async LoadPermissionPagination(
@@ -258,7 +282,15 @@ export class PermissionService {
   ): Promise<PaginationPermissionResponseDto> {
     const start = timeNow();
     const { search, page = 1, limit = 10 } = query;
-    const ttls = [5, 10, 15];
+    const ttls = ttlsRedis;
+    const redisKey =
+      process.env.REDIS_PERMISSION_PAGINATION ?? 'permission:pagination';
+    const queryList = {
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+    };
+
     const [permissions, total] = await this.permissionRepository.findAndCount({
       where: search
         ? [
@@ -292,7 +324,7 @@ export class PermissionService {
     };
     await Promise.all(
       ttls.map((ttl) => {
-        const key = this.getPermissionPaginationKey(query, ttl);
+        const key = getRedisPaginationKey(queryList, redisKey, ttl);
         return this.redisService.set(key, result, ttl * 60);
       }),
     );
