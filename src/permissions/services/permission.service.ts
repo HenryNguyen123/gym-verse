@@ -222,6 +222,7 @@ export class PermissionService {
       excludeExtraneousValues: true,
     });
   }
+
   // step: load permission from database
   private async LoadPermissionFromDb(): Promise<PermissionResponseDto[]> {
     const start = timeNow();
@@ -246,6 +247,7 @@ export class PermissionService {
     );
     return result;
   }
+
   // step: load permission from database
   async getAllPermission(): Promise<PermissionResponseDto[]> {
     const start = timeNow();
@@ -276,6 +278,7 @@ export class PermissionService {
       this.permissionLoading = undefined;
     }
   }
+
   // step: load permission pagination from database
   private async LoadPermissionPagination(
     query: ListPermissionRequestDto,

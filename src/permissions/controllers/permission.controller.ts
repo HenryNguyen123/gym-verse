@@ -27,7 +27,7 @@ export class PermissionController {
 
   // step: get all permission
   @Get()
-  // @Auth([RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN])
+  @Auth([RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN])
   async read(
     @Query() query: ListPermissionRequestDto,
   ): Promise<PaginationPermissionResponseDto> {
@@ -36,7 +36,7 @@ export class PermissionController {
 
   // step: get permission by id
   @Get(':id')
-  // @Auth([RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN])
+  @Auth([RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN])
   async findOne(
     @Param('id', ParseIntPipe) id: number,
   ): Promise<PermissionResponseDto> {
