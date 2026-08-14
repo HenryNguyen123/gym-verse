@@ -77,4 +77,16 @@ export class RedisService implements OnModuleDestroy {
   async onModuleDestroy() {
     await this.client.quit();
   }
+
+  //step: delete key redis invalid cached
+  async deletePattern(pattern: string) {
+    const keys = await this.client.keys(pattern);
+    if (keys.length > 0) {
+      await this.client.del(...keys);
+    }
+  }
+  async deletePatternCached(key: string) {
+    await this.deletePattern(`${key}:*`);
+    console.log(`delete key: ${key} succsessfuly`);
+  }
 }

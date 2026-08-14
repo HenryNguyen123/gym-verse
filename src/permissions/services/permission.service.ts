@@ -37,6 +37,7 @@ export class PermissionService {
     string,
     Promise<PaginationPermissionResponseDto>
   >();
+
   // step: get all permission
   async read(
     query: ListPermissionRequestDto,
@@ -260,7 +261,7 @@ export class PermissionService {
         await this.redisService.get<PermissionResponseDto[]>(redisKey);
 
       if (cached) {
-        measureTime(`get permission from redis:${key}:${ttl}ms`, start);
+        measureTime(`get permission from redis:${key}:${ttl}m`, start);
         return cached;
       }
     }

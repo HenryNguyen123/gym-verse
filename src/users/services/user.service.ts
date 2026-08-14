@@ -24,8 +24,12 @@ import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.reques
 import { UserResponseDto } from 'src/users/dtos/response/user.response.dto';
 import { Profile } from 'src/users/entities/profile.entity';
 import { User } from 'src/users/entities/user.entity';
-import { Repository } from 'typeorm';
+import { DataSource, Like, Repository } from 'typeorm';
 import 'dotenv/config';
+import { getRedisKey, ttlsRedis } from 'src/commons/utils/get-redis-key.util';
+import { PaginationUsersResponseDto } from 'src/users/dtos/response/panigation-user.response.dto';
+import { QueryUserRequestDto } from 'src/users/dtos/request/query-user.request.dto';
+import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
 
 @Injectable()
 export class UserService {
@@ -33,6 +37,8 @@ export class UserService {
     @InjectQueue('mail')
     private readonly mailQueue: Queue,
     private readonly redisService: RedisService,
+
+    private readonly dataSource: DataSource,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Profile)
@@ -47,8 +53,59 @@ export class UserService {
   ) {}
   // user loading pending
   private usersLoading?: Promise<UserResponseDto[]>;
+  private userPaginationLoading = new Map<
+    string,
+    Promise<PaginationUsersResponseDto>
+  >();
+
+  // read all users pagination
+  async getUsersPagination(
+    query: QueryUserRequestDto,
+  ): Promise<PaginationUsersResponseDto> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+    const { search = '', page = 1, limit = 10 } = query;
+    const loadingKey = `${page}:${limit}:${search.toLowerCase()}`;
+    const key = process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
+    const queryList = {
+      search: query.search,
+      page: query.page,
+      limit: query.limit,
+    };
+    // check redis
+    for (const ttl of ttls) {
+      const keyRedis = getRedisPaginationKey(queryList, key, ttl);
+      const cachedUsers =
+        await this.redisService.get<PaginationUsersResponseDto>(keyRedis);
+      if (cachedUsers) {
+        measureTime(
+          `get users from redis:${key}:page:${page}:limit:${limit}:${ttl}ms`,
+          start,
+        );
+        return cachedUsers;
+      }
+    }
+    // return permission exists
+    if (this.userPaginationLoading.has(loadingKey)) {
+      measureTime(`return users loading: ${loadingKey}`, start);
+      return this.userPaginationLoading.get(loadingKey)!;
+    }
+    // first load users in database
+    const promise = this.loadPaginationUser(query);
+    this.userPaginationLoading.set(loadingKey, promise);
+    try {
+      measureTime(`users loading`, start);
+      return await promise;
+    } finally {
+      this.userPaginationLoading.delete(loadingKey);
+    }
+  }
+
   //create user
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
+    const paginationKey =
+      process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const start = timeNow();
     const {
@@ -87,89 +144,89 @@ export class UserService {
       throw new ConflictException('Email or username already exists');
     }
 
-    // Upload files
-    // const [avatarUpload, coverImageUpload] = await Promise.all([
-    //   files.avatar?.length
-    //     ? await this.cloudinaryService.uploadFileCloudinary(files.avatar[0])
-    //     : Promise.resolve(null),
-    //   files.coverImage?.length
-    //     ? await this.cloudinaryService.uploadFileCloudinary(files.coverImage[0])
-    //     : Promise.resolve(null),
-    // ]);
-    // measureTime('upload image in cloudinary', start);
-
     // Hash password
     const hashedPassword = await hashPassword(password);
+    ///////////// transaction ///////////////
+    const res = await this.dataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const profileRepo = manager.getRepository(Profile);
+      const roleRepo = manager.getRepository(Role);
+      const userRoleRepo = manager.getRepository(UserRole);
+      const verifyTokenRepo = manager.getRepository(VerifyToken);
+      // Create user
+      const user = userRepo.create({
+        email,
+        userName,
+        password: hashedPassword,
+      });
 
-    // Create user
-    const user = this.userRepository.create({
-      email,
-      userName,
-      password: hashedPassword,
-    });
+      await userRepo.save(user);
 
-    await this.userRepository.save(user);
-
-    // Create profile
-    const profile = this.profileRepository.create({
-      user,
-      fullName,
-      gender,
-      birthday,
-      phone,
-      avatar: avatarUrl,
-      avatarPublicId,
-      coverImage: coverImageUrl,
-      coverImagePublicId,
-      bio,
-      height,
-      weight,
-      bodyFat,
-      goal,
-      fitnessLevel,
-      experienceYears,
-      city,
-      country,
-      privacySetting,
-    });
-    await this.profileRepository.save(profile);
-    measureTime('create profile', start);
-
-    // Role
-    const role = await this.roleRepository.findOneBy({
-      code: RoleEnum.USER,
-    });
-    if (!role) {
-      throw new InternalServerErrorException('Role USER not found');
-    }
-    await this.userRoleRepository.save(
-      this.userRoleRepository.create({
+      // Create profile
+      const profile = profileRepo.create({
         user,
-        role,
-      }),
-    );
-    measureTime('create role', start);
+        fullName,
+        gender,
+        birthday,
+        phone,
+        avatar: avatarUrl,
+        avatarPublicId,
+        coverImage: coverImageUrl,
+        coverImagePublicId,
+        bio,
+        height,
+        weight,
+        bodyFat,
+        goal,
+        fitnessLevel,
+        experienceYears,
+        city,
+        country,
+        privacySetting,
+      });
+      await profileRepo.save(profile);
+      measureTime('create profile', start);
 
-    // Verify token
-    const token = randomUUID();
-    await this.verifyTokenRepository.delete({
-      userId: user.id,
-    });
-    await this.verifyTokenRepository.save(
-      this.verifyTokenRepository.create({
+      // Role
+      const role = await roleRepo.findOneBy({
+        code: RoleEnum.USER,
+      });
+      if (!role) {
+        throw new InternalServerErrorException('Role USER not found');
+      }
+      await userRoleRepo.save(
+        userRoleRepo.create({
+          user,
+          role,
+        }),
+      );
+      measureTime('create role', start);
+      // Verify token
+      const token = randomUUID();
+      await verifyTokenRepo.delete({
         userId: user.id,
+      });
+      await verifyTokenRepo.save(
+        verifyTokenRepo.create({
+          userId: user.id,
+          token,
+          expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }),
+      );
+      return {
+        user,
+        profile,
         token,
-        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      }),
-    );
+      };
+    });
 
     // Send mail
     await this.mailQueue.add(
       MailJobName.SEND_VERIFY_MAIL,
       {
-        mail: user.email,
-        fullName: profile.fullName,
-        verifyLink: `${frontendUrl}/verify?token=${token}`,
+        mail: res.user.email,
+        fullName: res.profile.fullName,
+        verifyLink: `${frontendUrl}/verify?token=${res.token}`,
         expireTime: '24h',
       },
       {
@@ -186,7 +243,7 @@ export class UserService {
 
     const result = await this.userRepository.findOne({
       where: {
-        id: user.id,
+        id: res.user.id,
       },
       relations: {
         profile: true,
@@ -199,23 +256,27 @@ export class UserService {
     if (!result) {
       throw new NotFoundException('User not found');
     }
+
+    //del redis exists
+    await this.redisService.deletePatternCached(cacheKeys);
+    //delete old key pagination in redis
+    await this.redisService.deletePatternCached(paginationKey);
     measureTime('successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
       excludeExtraneousValues: true,
     });
   }
+
   //update
   async update(
     id: number,
     body: UpdateNewUserResDto,
   ): Promise<UserResponseDto> {
     const start = timeNow();
-    const cacheKeys = [
-      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-    ];
+    const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
+    const paginationKey =
+      process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
     const cacheUsers = await this.read();
     const user = cacheUsers.find((u) => u.id === id);
     measureTime('get user', start);
@@ -299,20 +360,18 @@ export class UserService {
     }
 
     //del redis exists
-    for (const key of cacheKeys) {
-      await this.redisService.del(key);
-      measureTime(`delete users from redis: ${key}`, start);
-      // return cacheUser;
-    }
-    //set new all users in cached
-    await this.read();
-    measureTime('set new all users successfuly', start);
+    await this.redisService.deletePatternCached(cacheKeys);
+    //delete old key pagination in redis
+    await this.redisService.deletePatternCached(paginationKey);
+    // await this.read();
+    measureTime('delete old key cached successfuly', start);
     measureTime('update successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
       excludeExtraneousValues: true,
     });
   }
+
   //read
   async read(): Promise<UserResponseDto[]> {
     const start = timeNow();
@@ -343,6 +402,7 @@ export class UserService {
       this.usersLoading = undefined;
     }
   }
+
   //find user by id
   async findById(id: number): Promise<UserResponseDto> {
     const start = timeNow();
@@ -357,21 +417,19 @@ export class UserService {
       excludeExtraneousValues: true,
     });
   }
+
   //update status user
   async updateStatus(
     body: UpdateStatusUserDto,
     id: number,
   ): Promise<UserResponseDto> {
     const start = timeNow();
-    const cacheKeys = [
-      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-    ];
+    const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
+    const paginationKey =
+      process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
     //get user by redis
     const cacheUsers = await this.read();
     const user = cacheUsers.find((u) => u.id === id);
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -398,10 +456,10 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
     //del and update of users into redis
-    for (const key of cacheKeys) {
-      await this.redisService.del(key);
-    }
-    await this.read();
+    //del redis exists
+    await this.redisService.deletePatternCached(cacheKeys);
+    //delete old key pagination in redis
+    await this.redisService.deletePatternCached(paginationKey);
     measureTime('update all users successfuly', start);
     measureTime('update status successfuly', start);
 
@@ -409,32 +467,29 @@ export class UserService {
       excludeExtraneousValues: true,
     });
   }
+
   //delete user
   async delete(id: number): Promise<void> {
     const start = timeNow();
-    const cacheKeys = [
-      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-    ];
-    // const user = await this.userRepository.findOne({
-    //   where: { id: body.id },
-    // });
-    // if (!user) throw new InternalServerErrorException('user not exist!');
-    // await this.userRepository.delete(body.id);
+    const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
+    const paginationKey =
+      process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
     const resultRoleUser = await this.userRepository.delete(id);
     if (resultRoleUser.affected === 0)
       throw new NotFoundException('User not found');
     measureTime('update status successfuly', start);
-    //del and update of users into redis
-    for (const key of cacheKeys) {
-      await this.redisService.del(key);
-    }
-    await this.read();
+    //del redis exists
+    await this.redisService.deletePatternCached(cacheKeys);
+    //delete old key pagination in redis
+    await this.redisService.deletePatternCached(paginationKey);
     measureTime('del & update redis successfuly', start);
   }
+
   //load users from data
   private async LoadUsersFromDb(): Promise<UserResponseDto[]> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+    const key = process.env.REDIS_USER_ALL ?? 'users:all';
     const users = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.profile', 'profile')
@@ -446,32 +501,32 @@ export class UserService {
         'user.email',
         'user.isActive',
         'user.isVerified',
-        'user.status',
-        'user.failedLoginAttempts',
-        'user.lockedUntil',
-        'user.lastLoginAt',
-        'user.createdAt',
-        'user.updatedAt',
+        // 'user.status',
+        // 'user.failedLoginAttempts',
+        // 'user.lockedUntil',
+        // 'user.lastLoginAt',
+        // 'user.createdAt',
+        // 'user.updatedAt',
 
         'profile.id',
-        'profile.fullName',
-        'profile.avatar',
-        'profile.avatarPublicId',
-        'profile.coverImage',
-        'profile.coverImagePublicId',
-        'profile.bio',
-        'profile.gender',
-        'profile.birthday',
-        'profile.phone',
-        'profile.height',
-        'profile.weight',
-        'profile.bodyFat',
-        'profile.goal',
-        'profile.fitnessLevel',
-        'profile.experienceYears',
-        'profile.city',
-        'profile.country',
-        'profile.privacySetting',
+        // 'profile.fullName',
+        // 'profile.avatar',
+        // 'profile.avatarPublicId',
+        // 'profile.coverImage',
+        // 'profile.coverImagePublicId',
+        // 'profile.bio',
+        // 'profile.gender',
+        // 'profile.birthday',
+        // 'profile.phone',
+        // 'profile.height',
+        // 'profile.weight',
+        // 'profile.bodyFat',
+        // 'profile.goal',
+        // 'profile.fitnessLevel',
+        // 'profile.experienceYears',
+        // 'profile.city',
+        // 'profile.country',
+        // 'profile.privacySetting',
 
         'role.id',
         'role.name',
@@ -483,23 +538,78 @@ export class UserService {
     });
 
     // save redis
-    await Promise.all([
-      this.redisService.set(
-        process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-        result,
-        5 * 60,
-      ),
-      this.redisService.set(
-        process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-        result,
-        10 * 60,
-      ),
-      this.redisService.set(
-        process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-        result,
-        15 * 60,
-      ),
-    ]);
+    await Promise.all(
+      ttls.map((ttl) => {
+        const redisKey = getRedisKey(key, ttl);
+        return this.redisService.set(redisKey, result, ttl * 60);
+      }),
+    );
+    measureTime(`get permission in redis`, start);
+    return result;
+  }
+
+  //load user pagination
+  private async loadPaginationUser(
+    query: QueryUserRequestDto,
+  ): Promise<PaginationUsersResponseDto> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+    const { search, page = 1, limit = 10 } = query;
+    const normalizedSearch = search?.trim().toLowerCase() ?? '';
+    const redisKey = process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
+
+    const queryList = {
+      normalizedSearch,
+      page,
+      limit,
+    };
+
+    const [users, total] = await this.userRepository.findAndCount({
+      where: search
+        ? [
+            {
+              email: Like(`%${search}%`),
+            },
+            {
+              userName: Like(`%${search}%`),
+            },
+            {
+              profile: {
+                fullName: Like(`%${search}%`),
+              },
+            },
+          ]
+        : {},
+      order: {
+        createdAt: 'DESC',
+      },
+      relations: {
+        profile: true,
+        userRoles: {
+          role: true,
+        },
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    measureTime('load users pagination', start);
+    const result = {
+      meta: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+      data: users,
+    };
+    await Promise.all(
+      ttls.map((ttl) => {
+        const key = getRedisPaginationKey(queryList, redisKey, ttl);
+        return this.redisService.set(key, result, ttl * 60);
+      }),
+    );
+    measureTime('set users in redis successfuly', start);
     return result;
   }
 }

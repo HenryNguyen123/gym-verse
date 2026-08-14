@@ -42,5 +42,5 @@ export class UserResponseDto {
 
   @Expose()
   @Type(() => UserRoleResponseDto)
-  userRole!: UserRoleResponseDto[];
+  userRoles!: UserRoleResponseDto[];
 }

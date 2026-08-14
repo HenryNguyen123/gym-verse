@@ -9,14 +9,17 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
+import { QueryUserRequestDto } from 'src/users/dtos/request/query-user.request.dto';
 import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.request.dto';
+import { PaginationUsersResponseDto } from 'src/users/dtos/response/panigation-user.response.dto';
 import { UserResponseDto } from 'src/users/dtos/response/user.response.dto';
 import { UserService } from 'src/users/services/user.service';
 
@@ -52,8 +55,10 @@ export class UserController {
   //read
   @Get()
   // @UseGuards(JwtAuthGuard, RoleAdminGuard)
-  async read(): Promise<UserResponseDto[]> {
-    return await this.userService.read();
+  async read(
+    @Query() query: QueryUserRequestDto,
+  ): Promise<PaginationUsersResponseDto> {
+    return await this.userService.getUsersPagination(query);
   }
   //find user by id
   @Get(':id')
