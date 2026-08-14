@@ -132,21 +132,23 @@ export class UserService {
       privacySetting,
     } = createUserDto;
 
-    // get and check exists all user and set or get in redis
-    const cacheUsers = await this.read();
-    measureTime('get all user', start);
-    // Check email & username
-    const existedUser = cacheUsers.some(
-      (u) => u.email === email || u.userName === userName,
-    );
-    measureTime('check user successfuly', start);
+    // get and check exists 
+    const startCheckUser = timeNow();
+    const existedUser = await this.userRepository.exists({
+      where: [{ email }, { userName }],
+    });
+    measureTime('check user successfuly', startCheckUser);
     if (existedUser) {
       throw new ConflictException('Email or username already exists');
     }
 
+    const starthash = timeNow();
     // Hash password
     const hashedPassword = await hashPassword(password);
+    measureTime('check hash successfuly', starthash);
+
     ///////////// transaction ///////////////
+    const startTran = timeNow();
     const res = await this.dataSource.transaction(async (manager) => {
       const userRepo = manager.getRepository(User);
       const profileRepo = manager.getRepository(Profile);
@@ -159,7 +161,6 @@ export class UserService {
         userName,
         password: hashedPassword,
       });
-
       await userRepo.save(user);
 
       // Create profile
@@ -185,7 +186,6 @@ export class UserService {
         privacySetting,
       });
       await profileRepo.save(profile);
-      measureTime('create profile', start);
 
       // Role
       const role = await roleRepo.findOneBy({
@@ -194,18 +194,15 @@ export class UserService {
       if (!role) {
         throw new InternalServerErrorException('Role USER not found');
       }
-      await userRoleRepo.save(
+      const userRole = await userRoleRepo.save(
         userRoleRepo.create({
           user,
           role,
         }),
       );
-      measureTime('create role', start);
+
       // Verify token
       const token = randomUUID();
-      await verifyTokenRepo.delete({
-        userId: user.id,
-      });
       await verifyTokenRepo.save(
         verifyTokenRepo.create({
           userId: user.id,
@@ -216,51 +213,63 @@ export class UserService {
       return {
         user,
         profile,
+        userRole,
+        role,
         token,
       };
     });
-
+    measureTime('user transaction successfully', startTran);
     // Send mail
-    await this.mailQueue.add(
-      MailJobName.SEND_VERIFY_MAIL,
-      {
-        mail: res.user.email,
-        fullName: res.profile.fullName,
-        verifyLink: `${frontendUrl}/verify?token=${res.token}`,
-        expireTime: '24h',
-      },
-      {
-        attempts: 5,
-        backoff: {
-          type: 'exponential',
-          delay: 3000,
+    const startMail = timeNow();
+    try {
+      await this.mailQueue.add(
+        MailJobName.SEND_VERIFY_MAIL,
+        {
+          mail: res.user.email,
+          fullName: res.profile.fullName,
+          verifyLink: `${frontendUrl}/verify?token=${res.token}`,
+          expireTime: '24h',
         },
-        removeOnComplete: 100,
-        removeOnFail: 100,
-      },
-    );
-    measureTime('send mail redis', start);
+        {
+          attempts: 5,
+          backoff: {
+            type: 'exponential',
+            delay: 3000,
+          },
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      );
+    } catch (error: unknown) {
+      console.log(error);
+    }
+    measureTime('send mail redis', startMail);
 
-    const result = await this.userRepository.findOne({
-      where: {
-        id: res.user.id,
-      },
-      relations: {
-        profile: true,
-        userRoles: {
-          role: true,
+    const startRegetUser = timeNow();
+    const result = {
+      ...res.user,
+      profile: res.profile,
+      userRoles: [
+        {
+          role: res.role,
         },
-      },
-    });
+      ],
+    };
 
     if (!result) {
       throw new NotFoundException('User not found');
     }
+    measureTime('reget user', startRegetUser);
 
-    //del redis exists
-    await this.redisService.deletePatternCached(cacheKeys);
-    //delete old key pagination in redis
-    await this.redisService.deletePatternCached(paginationKey);
+    const startDelKey = timeNow();
+    await Promise.all([
+      //del redis exists
+      this.redisService.deletePatternCached(cacheKeys),
+      //delete old key pagination in redis
+      this.redisService.deletePatternCached(paginationKey),
+    ]);
+    measureTime('delete old key redis', startDelKey);
+
     measureTime('successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
@@ -611,5 +620,25 @@ export class UserService {
     );
     measureTime('set users in redis successfuly', start);
     return result;
+  }
+
+  // reidis set key in redis
+  async loadUserKeyRedis(type: 'email' | 'username', value: string) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.userName', 'user.email'])
+      .where(`user.${type === 'email' ? 'email' : 'userName'} = :value`, {
+        value,
+      })
+      .getOne();
+
+    if (!user) {
+      return null;
+    }
+    const key = `user:${type}:${value}`;
+
+    await this.redisService.set(key, user, 10 * 60);
+
+    return user;
   }
 }
