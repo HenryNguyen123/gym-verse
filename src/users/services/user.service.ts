@@ -19,7 +19,6 @@ import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
 import { RoleEnum } from 'src/roles/enums/role.enum';
 import { CreateUserDto } from 'src/users/dtos/request/create-user.dto';
-import { UpdateNewUserResDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { UpdateStatusUserDto } from 'src/users/dtos/request/update-status.request.dto';
 import { UserResponseDto } from 'src/users/dtos/response/user.response.dto';
 import { Profile } from 'src/users/entities/profile.entity';
@@ -30,6 +29,7 @@ import { getRedisKey, ttlsRedis } from 'src/commons/utils/get-redis-key.util';
 import { PaginationUsersResponseDto } from 'src/users/dtos/response/panigation-user.response.dto';
 import { QueryUserRequestDto } from 'src/users/dtos/request/query-user.request.dto';
 import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
+import { UpdateNewUserDto } from 'src/users/dtos/request/update-new-user.request.dto';
 
 @Injectable()
 export class UserService {
@@ -132,7 +132,7 @@ export class UserService {
       privacySetting,
     } = createUserDto;
 
-    // get and check exists 
+    // get and check exists
     const startCheckUser = timeNow();
     const existedUser = await this.userRepository.exists({
       where: [{ email }, { userName }],
@@ -278,16 +278,17 @@ export class UserService {
   }
 
   //update
-  async update(
-    id: number,
-    body: UpdateNewUserResDto,
-  ): Promise<UserResponseDto> {
+  async update(id: number, body: UpdateNewUserDto): Promise<UserResponseDto> {
     const start = timeNow();
     const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
     const paginationKey =
       process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
-    const cacheUsers = await this.read();
-    const user = cacheUsers.find((u) => u.id === id);
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: {
+        profile: true,
+      },
+    });
     measureTime('get user', start);
 
     if (!user) {
@@ -295,65 +296,64 @@ export class UserService {
     }
 
     // Update Profile
+    const startTransaction = timeNow();
+    await this.dataSource.transaction(async (manager) => {
+      const profileRepo = manager.getRepository(Profile);
+      const roleRepo = manager.getRepository(Role);
+      const userRoleRepo = manager.getRepository(UserRole);
+      await profileRepo.update(user.profile.id, {
+        fullName: body.fullName ?? user.profile.fullName,
+        gender: body.gender ?? user.profile.gender,
+        birthday: body.birthday ?? user.profile.birthday,
+        phone: body.phone ?? user.profile.phone,
 
-    await this.profileRepository.update(user.profile.id, {
-      fullName: body.fullName ?? user.profile.fullName,
-      gender: body.gender ?? user.profile.gender,
-      birthday: body.birthday ?? user.profile.birthday,
-      phone: body.phone ?? user.profile.phone,
+        avatar: body.avatarUrl ?? user.profile.avatar,
+        avatarPublicId: body.avatarPublicId ?? user.profile.avatarPublicId,
+        coverImage: body.coverImageUrl ?? user.profile.coverImage,
+        coverImagePublicId:
+          body.coverImagePublicId ?? user.profile.coverImagePublicId,
 
-      avatar: body.avatarUrl ?? user.profile.avatar,
-      avatarPublicId: body.avatarPublicId ?? user.profile.avatarPublicId,
-      coverImage: body.coverImageUrl ?? user.profile.coverImage,
-      coverImagePublicId:
-        body.coverImagePublicId ?? user.profile.coverImagePublicId,
-
-      bio: body.bio ?? user.profile.bio,
-      height: body.height ?? user.profile.height,
-      weight: body.weight ?? user.profile.weight,
-      bodyFat: body.bodyFat ?? user.profile.bodyFat,
-      goal: body.goal ?? user.profile.goal,
-      fitnessLevel: body.fitnessLevel ?? user.profile.fitnessLevel,
-      experienceYears: body.experienceYears ?? user.profile.experienceYears,
-      city: body.city ?? user.profile.city,
-      country: body.country ?? user.profile.country,
-      privacySetting: body.privacySetting ?? user.profile.privacySetting,
-    });
-    measureTime('update profile', start);
-
-    // Update Role
-
-    if (body.roleCode) {
-      const role = await this.roleRepository.findOneBy({
-        code: body.roleCode,
+        bio: body.bio ?? user.profile.bio,
+        height: body.height ?? user.profile.height,
+        weight: body.weight ?? user.profile.weight,
+        bodyFat: body.bodyFat ?? user.profile.bodyFat,
+        goal: body.goal ?? user.profile.goal,
+        fitnessLevel: body.fitnessLevel ?? user.profile.fitnessLevel,
+        experienceYears: body.experienceYears ?? user.profile.experienceYears,
+        city: body.city ?? user.profile.city,
+        country: body.country ?? user.profile.country,
+        privacySetting: body.privacySetting ?? user.profile.privacySetting,
       });
+      // Update Role
+      if (body.roleCode) {
+        const role = await roleRepo.findOneBy({
+          code: body.roleCode,
+        });
+        if (!role) {
+          throw new NotFoundException('Role not found');
+        }
 
-      if (!role) {
-        throw new NotFoundException('Role not found');
-      }
-
-      const userRole = await this.userRoleRepository.findOne({
-        where: {
-          user: {
-            id: user.id,
+        const userRole = await userRoleRepo.findOne({
+          where: {
+            user: {
+              id: user.id,
+            },
           },
-        },
-        relations: {
-          role: true,
-        },
-      });
+          relations: {
+            role: true,
+          },
+        });
+        if (!userRole) {
+          throw new NotFoundException('User role not found');
+        }
 
-      if (!userRole) {
-        throw new NotFoundException('User role not found');
+        userRole.role = role;
+        await userRoleRepo.save(userRole);
       }
+    });
+    measureTime('update user successfuly', startTransaction);
 
-      userRole.role = role;
-
-      await this.userRoleRepository.save(userRole);
-    }
-    measureTime('update role', start);
-
-    // Reload
+    //  Get updated user
     const result = await this.userRepository.findOne({
       where: { id },
       relations: {
@@ -363,17 +363,22 @@ export class UserService {
         },
       },
     });
-
     if (!result) {
       throw new NotFoundException('User not found');
     }
-
-    //del redis exists
-    await this.redisService.deletePatternCached(cacheKeys);
-    //delete old key pagination in redis
-    await this.redisService.deletePatternCached(paginationKey);
+    const startKeyRedis = timeNow();
+    try {
+      await Promise.all([
+        //del redis exists
+        this.redisService.deletePatternCached(cacheKeys),
+        //delete old key pagination in redis
+        this.redisService.deletePatternCached(paginationKey),
+      ]);
+    } catch (error: unknown) {
+      console.log(error);
+    }
     // await this.read();
-    measureTime('delete old key cached successfuly', start);
+    measureTime('delete old key cached successfuly', startKeyRedis);
     measureTime('update successfuly', start);
 
     return plainToInstance(UserResponseDto, result, {
@@ -384,19 +389,25 @@ export class UserService {
   //read
   async read(): Promise<UserResponseDto[]> {
     const start = timeNow();
-    const cacheKeys = [
-      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-    ];
+    const ttls = ttlsRedis;
+    const key = process.env.REDIS_USER_ALL ?? 'users:all';
     //check redis
-    for (const key of cacheKeys) {
-      const cacheUser = await this.redisService.get<UserResponseDto[]>(key);
-      if (cacheUser) {
+    for (const ttl of ttls) {
+      const keyRedis = getRedisKey(key, ttl);
+      const cachedUsers =
+        await this.redisService.get<UserResponseDto[]>(keyRedis);
+      if (cachedUsers) {
         measureTime(`get users from redis: ${key}`, start);
-        return cacheUser;
+        return cachedUsers;
       }
     }
+    // for (const key of cacheKeys) {
+    //   const cacheUser = await this.redisService.get<UserResponseDto[]>(key);
+    //   if (cacheUser) {
+    //     measureTime(`get users from redis: ${key}`, start);
+    //     return cacheUser;
+    //   }
+    // }
     //return users exists
     if (this.usersLoading) {
       measureTime(`user exists`, start);
@@ -415,9 +426,15 @@ export class UserService {
   //find user by id
   async findById(id: number): Promise<UserResponseDto> {
     const start = timeNow();
-    //get user by redis
-    const cacheUsers = await this.read();
-    const user = cacheUsers.find((u) => u.id === id);
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: {
+        profile: true,
+        userRoles: {
+          role: true,
+        },
+      },
+    });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -436,19 +453,13 @@ export class UserService {
     const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
     const paginationKey =
       process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
-    //get user by redis
-    const cacheUsers = await this.read();
-    const user = cacheUsers.find((u) => u.id === id);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
+    //check user and update
     const result = await this.userRepository.update(id, {
       isActive: body.isActive,
     });
 
     if (!result.affected) {
-      throw new InternalServerErrorException('Failed to update user status');
+      throw new NotFoundException('User not found');
     }
 
     const updatedUser = await this.userRepository.findOne({
@@ -465,10 +476,14 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
     //del and update of users into redis
-    //del redis exists
-    await this.redisService.deletePatternCached(cacheKeys);
-    //delete old key pagination in redis
-    await this.redisService.deletePatternCached(paginationKey);
+    try {
+      await Promise.all([
+        this.redisService.deletePatternCached(cacheKeys),
+        this.redisService.deletePatternCached(paginationKey),
+      ]);
+    } catch (error) {
+      console.error('Failed to invalidate user cache', error);
+    }
     measureTime('update all users successfuly', start);
     measureTime('update status successfuly', start);
 
@@ -487,10 +502,12 @@ export class UserService {
     if (resultRoleUser.affected === 0)
       throw new NotFoundException('User not found');
     measureTime('update status successfuly', start);
-    //del redis exists
-    await this.redisService.deletePatternCached(cacheKeys);
-    //delete old key pagination in redis
-    await this.redisService.deletePatternCached(paginationKey);
+    await Promise.all([
+      //del redis exists
+      this.redisService.deletePatternCached(cacheKeys),
+      //delete old key pagination in redis
+      this.redisService.deletePatternCached(paginationKey),
+    ]);
     measureTime('del & update redis successfuly', start);
   }
 

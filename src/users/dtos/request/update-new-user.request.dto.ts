@@ -19,7 +19,7 @@ import {
   PrivacySettingEnum,
 } from 'src/users/enums/profile.enum';
 
-export class UpdateNewUserResDto {
+export class UpdateNewUserDto {
   @ApiProperty({
     example: 'John Doe',
     required: false,
