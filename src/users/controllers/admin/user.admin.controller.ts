@@ -80,7 +80,7 @@ export class UserAdminController {
     type: PaginationUsersResponseDto,
     description: 'get all users successfully',
   })
-  async read(
+  async findAll(
     @Query() query: QueryUserRequestDto,
   ): Promise<PaginationUsersResponseDto> {
     return this.userService.getUsersPagination(query);
@@ -138,7 +138,7 @@ export class UserAdminController {
     status: HttpStatus.NO_CONTENT,
     description: 'delete user successfully',
   })
-  async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {
+  async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.userService.delete(id);
   }
 }

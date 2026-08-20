@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -30,9 +31,17 @@ import { PaginationUsersResponseDto } from 'src/users/dtos/response/panigation-u
 import { QueryUserRequestDto } from 'src/users/dtos/request/query-user.request.dto';
 import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
 import { UpdateNewUserDto } from 'src/users/dtos/request/update-new-user.request.dto';
+import { normalizeSearch } from 'src/commons/utils/to-lower-case.util';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+  // user loading pending
+  private usersLoading?: Promise<UserResponseDto[]>;
+  private userPaginationLoading = new Map<
+    string,
+    Promise<PaginationUsersResponseDto>
+  >();
   constructor(
     @InjectQueue('mail')
     private readonly mailQueue: Queue,
@@ -51,12 +60,6 @@ export class UserService {
     private readonly verifyTokenRepository: Repository<VerifyToken>,
     private readonly configService: ConfigService,
   ) {}
-  // user loading pending
-  private usersLoading?: Promise<UserResponseDto[]>;
-  private userPaginationLoading = new Map<
-    string,
-    Promise<PaginationUsersResponseDto>
-  >();
 
   // read all users pagination
   async getUsersPagination(
@@ -64,11 +67,19 @@ export class UserService {
   ): Promise<PaginationUsersResponseDto> {
     const start = timeNow();
     const ttls = ttlsRedis;
+
     const { search = '', page = 1, limit = 10 } = query;
-    const loadingKey = `${page}:${limit}:${search.toLowerCase()}`;
+    const normalizedSearch = normalizeSearch(search);
+
+    const loadingKey = this.buildPaginationLoadingKey(
+      normalizedSearch,
+      page,
+      limit,
+    );
     const key = process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
+
     const queryList = {
-      search: query.search,
+      normalizedSearch,
       page: query.page,
       limit: query.limit,
     };
@@ -85,14 +96,17 @@ export class UserService {
         return cachedUsers;
       }
     }
+
     // return permission exists
     if (this.userPaginationLoading.has(loadingKey)) {
       measureTime(`return users loading: ${loadingKey}`, start);
       return this.userPaginationLoading.get(loadingKey)!;
     }
+
     // first load users in database
     const promise = this.loadPaginationUser(query);
     this.userPaginationLoading.set(loadingKey, promise);
+
     try {
       measureTime(`users loading`, start);
       return await promise;
@@ -657,5 +671,15 @@ export class UserService {
     await this.redisService.set(key, user, 10 * 60);
 
     return user;
+  }
+
+  /////////// helpers ////////////
+  // load key pagination
+  private buildPaginationLoadingKey(
+    search: string,
+    page: number,
+    limit: number,
+  ): string {
+    return `${search}:${page}:${limit}`;
   }
 }
