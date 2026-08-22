@@ -32,6 +32,7 @@ import { QueryUserRequestDto } from 'src/users/dtos/request/query-user.request.d
 import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
 import { UpdateNewUserDto } from 'src/users/dtos/request/update-new-user.request.dto';
 import { normalizeSearch } from 'src/commons/utils/to-lower-case.util';
+import { isPostgresUniqueViolation } from 'src/commons/utils/postgress-unique-violation.util';
 
 @Injectable()
 export class UserService {
@@ -104,7 +105,12 @@ export class UserService {
     }
 
     // first load users in database
-    const promise = this.loadPaginationUser(query);
+    const promise = this.loadPaginationUser({
+      ...query,
+      page,
+      limit,
+      search: normalizedSearch,
+    });
     this.userPaginationLoading.set(loadingKey, promise);
 
     try {
@@ -117,11 +123,18 @@ export class UserService {
 
   //create user
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    const start = timeNow();
+
     const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
+
     const paginationKey =
       process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
+
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    const start = timeNow();
+    if (!frontendUrl) {
+      throw new InternalServerErrorException('FRONTEND_URL is not configured');
+    }
+
     const {
       email,
       password,
@@ -161,77 +174,91 @@ export class UserService {
     const hashedPassword = await hashPassword(password);
     measureTime('check hash successfuly', starthash);
 
+    // Role
+    const role = await this.roleRepository.findOneBy({
+      code: RoleEnum.USER,
+    });
+    if (!role) {
+      throw new InternalServerErrorException('Role USER not found');
+    }
     ///////////// transaction ///////////////
     const startTran = timeNow();
-    const res = await this.dataSource.transaction(async (manager) => {
-      const userRepo = manager.getRepository(User);
-      const profileRepo = manager.getRepository(Profile);
-      const roleRepo = manager.getRepository(Role);
-      const userRoleRepo = manager.getRepository(UserRole);
-      const verifyTokenRepo = manager.getRepository(VerifyToken);
-      // Create user
-      const user = userRepo.create({
-        email,
-        userName,
-        password: hashedPassword,
-      });
-      await userRepo.save(user);
+    let res: {
+      user: User;
+      profile: Profile;
+      role: Role;
+      token: string;
+    };
+    try {
+      res = await this.dataSource.transaction(async (manager) => {
+        const userRepo = manager.getRepository(User);
+        const profileRepo = manager.getRepository(Profile);
+        // const roleRepo = manager.getRepository(Role);
+        const userRoleRepo = manager.getRepository(UserRole);
+        const verifyTokenRepo = manager.getRepository(VerifyToken);
+        // Create user
+        const user = userRepo.create({
+          email,
+          userName,
+          password: hashedPassword,
+        });
+        await userRepo.save(user);
 
-      // Create profile
-      const profile = profileRepo.create({
-        user,
-        fullName,
-        gender,
-        birthday,
-        phone,
-        avatar: avatarUrl,
-        avatarPublicId,
-        coverImage: coverImageUrl,
-        coverImagePublicId,
-        bio,
-        height,
-        weight,
-        bodyFat,
-        goal,
-        fitnessLevel,
-        experienceYears,
-        city,
-        country,
-        privacySetting,
-      });
-      await profileRepo.save(profile);
-
-      // Role
-      const role = await roleRepo.findOneBy({
-        code: RoleEnum.USER,
-      });
-      if (!role) {
-        throw new InternalServerErrorException('Role USER not found');
-      }
-      const userRole = await userRoleRepo.save(
-        userRoleRepo.create({
+        // Create profile
+        const profile = profileRepo.create({
           user,
-          role,
-        }),
-      );
+          fullName,
+          gender,
+          birthday,
+          phone,
+          avatar: avatarUrl,
+          avatarPublicId,
+          coverImage: coverImageUrl,
+          coverImagePublicId,
+          bio,
+          height,
+          weight,
+          bodyFat,
+          goal,
+          fitnessLevel,
+          experienceYears,
+          city,
+          country,
+          privacySetting,
+        });
+        await profileRepo.save(profile);
 
-      // Verify token
-      const token = randomUUID();
-      await verifyTokenRepo.save(
-        verifyTokenRepo.create({
-          userId: user.id,
+        const userRole = await userRoleRepo.save(
+          userRoleRepo.create({
+            user,
+            role,
+          }),
+        );
+
+        // Verify token
+        const token = randomUUID();
+        await verifyTokenRepo.save(
+          verifyTokenRepo.create({
+            userId: user.id,
+            token,
+            expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          }),
+        );
+        return {
+          user,
+          profile,
+          userRole,
+          role,
           token,
-          expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        }),
-      );
-      return {
-        user,
-        profile,
-        userRole,
-        role,
-        token,
-      };
-    });
+        };
+      });
+    } catch (error: unknown) {
+      if (isPostgresUniqueViolation(error)) {
+        throw new ConflictException('Email or username already exists');
+      }
+
+      throw error;
+    }
     measureTime('user transaction successfully', startTran);
     // Send mail
     const startMail = timeNow();
@@ -315,54 +342,97 @@ export class UserService {
       const profileRepo = manager.getRepository(Profile);
       const roleRepo = manager.getRepository(Role);
       const userRoleRepo = manager.getRepository(UserRole);
+
       await profileRepo.update(user.profile.id, {
-        fullName: body.fullName ?? user.profile.fullName,
-        gender: body.gender ?? user.profile.gender,
-        birthday: body.birthday ?? user.profile.birthday,
-        phone: body.phone ?? user.profile.phone,
+        fullName:
+          body.fullName !== undefined ? body.fullName : user.profile.fullName,
 
-        avatar: body.avatarUrl ?? user.profile.avatar,
-        avatarPublicId: body.avatarPublicId ?? user.profile.avatarPublicId,
-        coverImage: body.coverImageUrl ?? user.profile.coverImage,
+        gender: body.gender !== undefined ? body.gender : user.profile.gender,
+
+        birthday:
+          body.birthday !== undefined ? body.birthday : user.profile.birthday,
+
+        phone: body.phone !== undefined ? body.phone : user.profile.phone,
+
+        avatar:
+          body.avatarUrl !== undefined ? body.avatarUrl : user.profile.avatar,
+
+        avatarPublicId:
+          body.avatarPublicId !== undefined
+            ? body.avatarPublicId
+            : user.profile.avatarPublicId,
+
+        coverImage:
+          body.coverImageUrl !== undefined
+            ? body.coverImageUrl
+            : user.profile.coverImage,
+
         coverImagePublicId:
-          body.coverImagePublicId ?? user.profile.coverImagePublicId,
+          body.coverImagePublicId !== undefined
+            ? body.coverImagePublicId
+            : user.profile.coverImagePublicId,
 
-        bio: body.bio ?? user.profile.bio,
-        height: body.height ?? user.profile.height,
-        weight: body.weight ?? user.profile.weight,
-        bodyFat: body.bodyFat ?? user.profile.bodyFat,
-        goal: body.goal ?? user.profile.goal,
-        fitnessLevel: body.fitnessLevel ?? user.profile.fitnessLevel,
-        experienceYears: body.experienceYears ?? user.profile.experienceYears,
-        city: body.city ?? user.profile.city,
-        country: body.country ?? user.profile.country,
-        privacySetting: body.privacySetting ?? user.profile.privacySetting,
+        bio: body.bio !== undefined ? body.bio : user.profile.bio,
+
+        height: body.height !== undefined ? body.height : user.profile.height,
+
+        weight: body.weight !== undefined ? body.weight : user.profile.weight,
+
+        bodyFat:
+          body.bodyFat !== undefined ? body.bodyFat : user.profile.bodyFat,
+
+        goal: body.goal !== undefined ? body.goal : user.profile.goal,
+
+        fitnessLevel:
+          body.fitnessLevel !== undefined
+            ? body.fitnessLevel
+            : user.profile.fitnessLevel,
+
+        experienceYears:
+          body.experienceYears !== undefined
+            ? body.experienceYears
+            : user.profile.experienceYears,
+
+        city: body.city !== undefined ? body.city : user.profile.city,
+
+        country:
+          body.country !== undefined ? body.country : user.profile.country,
+
+        privacySetting:
+          body.privacySetting !== undefined
+            ? body.privacySetting
+            : user.profile.privacySetting,
       });
       // Update Role
       if (body.roleCode) {
-        const role = await roleRepo.findOneBy({
-          code: body.roleCode,
+        const roles = await roleRepo.find({
+          where: body.roleCode.map((code) => ({ code })),
         });
-        if (!role) {
-          throw new NotFoundException('Role not found');
-        }
+        if (roles.length !== body.roleCode.length) {
+          const foundCodes = new Set(roles.map((role) => role.code));
 
-        const userRole = await userRoleRepo.findOne({
-          where: {
-            user: {
-              id: user.id,
-            },
-          },
-          relations: {
-            role: true,
+          const missingRoles = body.roleCode.filter(
+            (code: RoleEnum) => !foundCodes.has(code),
+          );
+
+          throw new NotFoundException(
+            `Role not found: ${missingRoles.join(', ')}`,
+          );
+        }
+        // delete old userRole
+        await userRoleRepo.delete({
+          user: {
+            id: user.id,
           },
         });
-        if (!userRole) {
-          throw new NotFoundException('User role not found');
-        }
-
-        userRole.role = role;
-        await userRoleRepo.save(userRole);
+        //save new role user
+        const userRoles = roles.map((role) =>
+          userRoleRepo.create({
+            user,
+            role,
+          }),
+        );
+        await userRoleRepo.save(userRoles);
       }
     });
     measureTime('update user successfuly', startTransaction);
@@ -595,7 +665,7 @@ export class UserService {
     const start = timeNow();
     const ttls = ttlsRedis;
     const { search, page = 1, limit = 10 } = query;
-    const normalizedSearch = search?.trim().toLowerCase() ?? '';
+    const normalizedSearch = normalizeSearch(query.search);
     const redisKey = process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
 
     const queryList = {
@@ -608,14 +678,14 @@ export class UserService {
       where: search
         ? [
             {
-              email: Like(`%${search}%`),
+              email: Like(`%${normalizedSearch}%`),
             },
             {
-              userName: Like(`%${search}%`),
+              userName: Like(`%${normalizedSearch}%`),
             },
             {
               profile: {
-                fullName: Like(`%${search}%`),
+                fullName: Like(`%${normalizedSearch}%`),
               },
             },
           ]
@@ -641,8 +711,9 @@ export class UserService {
         totalItems: total,
         totalPages: Math.ceil(total / limit),
       },
-      data: users,
+      data: users.map((u) => this.toUserResponse(u)),
     };
+
     await Promise.all(
       ttls.map((ttl) => {
         const key = getRedisPaginationKey(queryList, redisKey, ttl);
@@ -681,5 +752,12 @@ export class UserService {
     limit: number,
   ): string {
     return `${search}:${page}:${limit}`;
+  }
+
+  // user response
+  private toUserResponse(user: User): UserResponseDto {
+    return plainToInstance(UserResponseDto, user, {
+      excludeExtraneousValues: true,
+    });
   }
 }

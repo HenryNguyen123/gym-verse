@@ -333,9 +333,9 @@ export class UserService {
       ...transactionResult.user,
       profile: transactionResult.profile,
       userRoles: [
-        {
-          role: transactionResult.role,
-        },
+        // {
+        //   role: transactionResult.role,
+        // },
       ],
     });
   }
@@ -445,7 +445,7 @@ export class UserService {
        */
       if (body.roleCode !== undefined) {
         const role = await roleRepo.findOneBy({
-          code: body.roleCode,
+          // code: body.roleCode,
         });
 
         if (!role) {

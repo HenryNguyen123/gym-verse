@@ -202,12 +202,23 @@ export class UpdateNewUserDto {
   privacySetting?: PrivacySettingEnum;
 
   @ApiProperty({
-    example: RoleEnum.USER,
+    example: [RoleEnum.USER],
     enum: RoleEnum,
     required: false,
+    isArray: true,
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : (value as RoleEnum)))
-  @IsEnum(RoleEnum)
-  roleCode?: RoleEnum;
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    if (Array.isArray(value)) {
+      return value.filter((item): item is RoleEnum => item !== '');
+    }
+
+    return [value as RoleEnum];
+  })
+  @IsEnum(RoleEnum, { each: true })
+  roleCode?: RoleEnum[];
 }

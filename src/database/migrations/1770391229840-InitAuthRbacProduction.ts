@@ -21,7 +21,8 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
           last_login_at TIMESTAMP NULL,
 
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          deleted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       );
     `);
 

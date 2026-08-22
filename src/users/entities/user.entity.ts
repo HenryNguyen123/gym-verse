@@ -89,6 +89,10 @@ export class User {
   })
   updatedAt!: Date;
 
+  @UpdateDateColumn({
+    name: 'deleted_at',
+  })
+  deletedAt!: Date;
   // ================= Relation =================
 
   @OneToOne(() => Profile, (profile) => profile.user)
