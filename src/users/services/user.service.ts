@@ -303,12 +303,8 @@ export class UserService {
     measureTime('reget user', startRegetUser);
 
     const startDelKey = timeNow();
-    await Promise.all([
-      //del redis exists
-      this.redisService.deletePatternCached(cacheKeys),
-      //delete old key pagination in redis
-      this.redisService.deletePatternCached(paginationKey),
-    ]);
+    // delete redis key
+    await this.invalidateUserCaches(cacheKeys, paginationKey);
     measureTime('delete old key redis', startDelKey);
 
     measureTime('successfuly', start);
@@ -450,17 +446,11 @@ export class UserService {
     if (!result) {
       throw new NotFoundException('User not found');
     }
+
     const startKeyRedis = timeNow();
-    try {
-      await Promise.all([
-        //del redis exists
-        this.redisService.deletePatternCached(cacheKeys),
-        //delete old key pagination in redis
-        this.redisService.deletePatternCached(paginationKey),
-      ]);
-    } catch (error: unknown) {
-      console.log(error);
-    }
+    // delete redis key
+    await this.invalidateUserCaches(cacheKeys, paginationKey);
+
     // await this.read();
     measureTime('delete old key cached successfuly', startKeyRedis);
     measureTime('update successfuly', start);
@@ -559,15 +549,10 @@ export class UserService {
     if (!updatedUser) {
       throw new NotFoundException('User not found');
     }
-    //del and update of users into redis
-    try {
-      await Promise.all([
-        this.redisService.deletePatternCached(cacheKeys),
-        this.redisService.deletePatternCached(paginationKey),
-      ]);
-    } catch (error) {
-      console.error('Failed to invalidate user cache', error);
-    }
+
+    // delete redis key
+    await this.invalidateUserCaches(cacheKeys, paginationKey);
+
     measureTime('update all users successfuly', start);
     measureTime('update status successfuly', start);
 
@@ -582,16 +567,17 @@ export class UserService {
     const cacheKeys = process.env.REDIS_USER_ALL ?? 'users:all';
     const paginationKey =
       process.env.REDIS_USER_PAGINATION ?? 'user:pagination';
-    const resultRoleUser = await this.userRepository.delete(id);
-    if (resultRoleUser.affected === 0)
-      throw new NotFoundException('User not found');
+    // const resultRoleUser = await this.userRepository.delete(id);
+    const result = await this.userRepository.update(id, {
+      isActive: false,
+      deletedAt: new Date(),
+    });
+    if (!result.affected) throw new NotFoundException('User not found');
     measureTime('update status successfuly', start);
-    await Promise.all([
-      //del redis exists
-      this.redisService.deletePatternCached(cacheKeys),
-      //delete old key pagination in redis
-      this.redisService.deletePatternCached(paginationKey),
-    ]);
+
+    // delete redis key
+    await this.invalidateUserCaches(cacheKeys, paginationKey);
+
     measureTime('del & update redis successfuly', start);
   }
 
@@ -759,5 +745,20 @@ export class UserService {
     return plainToInstance(UserResponseDto, user, {
       excludeExtraneousValues: true,
     });
+  }
+
+  // delete redis key
+  private async invalidateUserCaches(
+    cacheKeys: string,
+    paginationKey: string,
+  ): Promise<void> {
+    try {
+      await Promise.all([
+        this.redisService.deletePatternCached(cacheKeys),
+        this.redisService.deletePatternCached(paginationKey),
+      ]);
+    } catch (error: unknown) {
+      console.log(error);
+    }
   }
 }

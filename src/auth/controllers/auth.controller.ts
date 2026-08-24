@@ -11,7 +11,7 @@ import {
 import { LoginDto } from 'src/auth/dtos/request/login.request.dto';
 import { AuthService } from '../services/auth.service';
 import { LoginResponseDto } from 'src/auth/dtos/response/login.response.dto';
-import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 import { RegisterDto } from 'src/auth/dtos/request/register.request.dto';
@@ -27,6 +27,14 @@ export class AuthController {
   //step: login
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @ApiBody({
+    type: LoginDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: LoginResponseDto,
+    description: 'login user successfully',
+  })
   async login(
     @Body() loginDto: LoginDto,
     @Ip() ip: string,
@@ -38,6 +46,10 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'logout user successfully',
+  })
   async logout(@Ip() ip: string, @Req() req: Request): Promise<void> {
     const user = req['user'] as IPayloadJWTLogin;
     await this.authService.logout(user, ip);
@@ -49,6 +61,11 @@ export class AuthController {
   @ApiBody({
     type: RegisterDto,
   })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    // type:
+    description: 'register successfully',
+  })
   async register(@Body() registerDto: RegisterDto): Promise<void> {
     await this.authService.register(registerDto);
   }
@@ -59,6 +76,10 @@ export class AuthController {
   @ApiBody({
     type: VerifyDto,
   })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'verify mail susseccfully',
+  })
   async sendMailVerify(@Body() body: VerifyDto): Promise<void> {
     await this.authService.sendMailVerify(body.email);
   }
@@ -68,6 +89,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBody({
     type: VerifyDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'send mail forgot password successfuly',
   })
   async forgotPassword(@Body() body: VerifyDto): Promise<void> {
     await this.authService.forgotPassword(body);
