@@ -13,8 +13,8 @@ import { Repository } from 'typeorm';
 import { comparePassword, hashPassword } from 'src/commons/utils/password.util';
 import { JwtService } from '@nestjs/jwt';
 import {
+  ILoginUser,
   IPayloadJWTLogin,
-  IPayloadLogin,
 } from 'src/auth/interfaces/login.interface';
 import { RefreshToken } from 'src/auth/entities/refresh-token.entity';
 import { plainToInstance } from 'class-transformer';
@@ -35,12 +35,16 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 import { UserService } from 'src/users/services/user.service';
+import { DataSource } from 'typeorm/browser';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectQueue('mail')
     private readonly mailQueue: Queue,
+
+    private readonly dataSource: DataSource,
+
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
@@ -65,6 +69,10 @@ export class AuthService {
     const start = timeNow();
     // data login
     const { email, password } = loginDto;
+    const cacheKey = process.env.REDIS_AUTH_LOGIN_ATTEMPT_USER
+      ? `${process.env.REDIS_AUTH_LOGIN_ATTEMPT_USER}:${email}`
+      : `auth:login:user:${email}`;
+
     const keyAccess = this.configService.get<string>(
       'JWT_ACCESS_TOKEN_SECRET_KEY',
     );
@@ -83,60 +91,67 @@ export class AuthService {
       throw new InternalServerErrorException('Missing JWT configuration');
     }
 
-    // check user exist
+    const startUser = timeNow();
     const user = await this.userRepository
       .createQueryBuilder('user')
       .addSelect('user.password')
       .leftJoinAndSelect('user.profile', 'profile')
       .leftJoinAndSelect('user.userRoles', 'userRole')
       .leftJoinAndSelect('userRole.role', 'role')
-      .leftJoinAndSelect('role.rolePermissions', 'rolePermission')
-      .leftJoinAndSelect('rolePermission.permission', 'permission')
+      // .leftJoinAndSelect('role.rolePermissions', 'rolePermission')
+      // .leftJoinAndSelect('rolePermission.permission', 'permission')
       .where('user.email = :email', { email })
-      .andWhere('user.is_active = true')
+      // .andWhere('user.is_active = true')
       .getOne();
+
+    // check user exist
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException('Invalid email or password');
     }
-    measureTime('get user', start);
-    // check redis
+    measureTime('get user', startUser);
+
+    // check redis rate limited
     const redisId = `user:${ip}:${user.email}`;
     const countRedis = Number((await this.redisService.get(redisId)) || 0);
-    if (countRedis >= 5) {
+    const countCacheUser = Number((await this.redisService.get(cacheKey)) || 0);
+    if (countRedis >= 5 || countCacheUser >= 5) {
       throw new UnauthorizedException('User is locked for 5 minutes');
     }
     // check password
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
       // set redis
-      await this.redisService.incr(redisId, 300);
-      throw new UnauthorizedException('Invalid password');
+      const attempts = await this.redisService.incr(redisId);
+      const cacheUserAttempts = await this.redisService.incr(cacheKey);
+      if (attempts === 1 || cacheUserAttempts === 1) {
+        await this.redisService.expire(redisId, 5 * 60);
+        await this.redisService.expire(cacheKey, 5 * 60);
+      }
+      throw new UnauthorizedException('Invalid email or password');
     }
     // reset redis
-    await this.redisService.del(redisId);
+    await Promise.all([
+      this.redisService.del(redisId),
+      this.redisService.del(cacheKey),
+    ]);
+
     // payload
-    const roles = user.userRoles.map((userRole) => {
+    const roles = user.userRoles.map(({ role }) => {
       return {
-        name: userRole.role.name,
-        code: userRole.role.code,
+        name: role.name,
+        code: role.code,
       };
     });
-    const roleCode = user.userRoles.map((userRole) => {
-      return userRole.role.code;
+    const roleCode = roles.map((role) => {
+      return role.code;
     });
-    // const permissionCodes = user.userRoles.map((userRole) => {
-    //   return userRole.role.rolePermissions.map((rolePermission) => {
-    //     return rolePermission.permission.code;
-    //   });
-    // });
-    // const permissionCodes = user.userRoles.flatMap((userRole) =>
-    //   userRole.role.rolePermissions.map((rp) => rp.permission.code),
-    // );
-    const payload: IPayloadLogin = {
+
+    const payload: ILoginUser = {
+      id: user.id,
       email: user.email,
       userName: user.userName,
       isActive: user.isActive,
-      role: roles,
+      roles: roles,
       profile: {
         fullName: user.profile.fullName,
         gender: user.profile.gender,
@@ -150,26 +165,42 @@ export class AuthService {
       roleCode: roleCode,
       // permissionCodes: permissionCodes,
     };
+    const startJwt = timeNow();
     // generate token
-    const accessToken = await this.jwtService.signAsync(payloadJWT, {
-      secret: keyAccess,
-      expiresIn: timeAccess as StringValue,
-    });
-    const refreshToken = await this.jwtService.signAsync(payloadJWT, {
-      secret: keyRefresh,
-      expiresIn: timeRefresh as StringValue,
-    });
-    measureTime('create jwt service successfuly', start);
-    // save refresh token
-    await this.refreshTokenRepository.delete({
-      userId: user.id,
-    }); // delete all refresh token of user
-    const refreshTokenEntity = this.refreshTokenRepository.create({
-      userId: user.id,
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + timeRefreshMs),
-    });
-    await this.refreshTokenRepository.save(refreshTokenEntity);
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payloadJWT, {
+        secret: keyAccess,
+        expiresIn: timeAccess as StringValue,
+      }),
+      this.jwtService.signAsync(payloadJWT, {
+        secret: keyRefresh,
+        expiresIn: timeRefresh as StringValue,
+      }),
+    ]);
+    measureTime('create jwt service successfuly', startJwt);
+
+    //transaction
+    const startTransaction = timeNow();
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const refreshTokenRepo = manager.getRepository(RefreshToken);
+        // save refresh token
+        await refreshTokenRepo.delete({
+          userId: user.id,
+        });
+        // delete all refresh token of user
+        const refreshTokenEntity = refreshTokenRepo.create({
+          userId: user.id,
+          token: refreshToken,
+          expiresAt: new Date(Date.now() + timeRefreshMs),
+        });
+        await refreshTokenRepo.save(refreshTokenEntity);
+      });
+    } catch (error: unknown) {
+      console.log(error);
+      throw new InternalServerErrorException('Failed to create refresh token');
+    }
+    measureTime('check transaction', startTransaction);
     measureTime('login successfuly', start);
     // response
     return plainToInstance(LoginResponseDto, {

@@ -71,7 +71,7 @@ export class AuthController {
   }
 
   // step: send mail verify
-  @Post('verify')
+  @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   @ApiBody({
     type: VerifyDto,
@@ -80,7 +80,7 @@ export class AuthController {
     status: HttpStatus.OK,
     description: 'verify mail susseccfully',
   })
-  async sendMailVerify(@Body() body: VerifyDto): Promise<void> {
+  async resendVerification(@Body() body: VerifyDto): Promise<void> {
     await this.authService.sendMailVerify(body.email);
   }
 

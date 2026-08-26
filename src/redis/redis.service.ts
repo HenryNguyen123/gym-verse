@@ -63,6 +63,11 @@ export class RedisService implements OnModuleDestroy {
     return value;
   }
 
+  // step: expire
+  async expire(key: string, ttl: number): Promise<number> {
+    return this.client.expire(key, ttl);
+  }
+
   // step: exist key
   async exists(key: string) {
     return await this.client.exists(key);
