@@ -50,9 +50,9 @@ export class AuthController {
     status: HttpStatus.OK,
     description: 'logout user successfully',
   })
-  async logout(@Ip() ip: string, @Req() req: Request): Promise<void> {
+  async logout(@Req() req: Request): Promise<void> {
     const user = req['user'] as IPayloadJWTLogin;
-    await this.authService.logout(user, ip);
+    await this.authService.logout(user);
   }
 
   // step: register

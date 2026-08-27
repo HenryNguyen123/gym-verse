@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginDto } from '../dtos/request/login.request.dto';
@@ -39,6 +40,8 @@ import { DataSource } from 'typeorm/browser';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectQueue('mail')
     private readonly mailQueue: Queue,
@@ -71,7 +74,7 @@ export class AuthService {
     const { email, password } = loginDto;
     const cacheKey = process.env.REDIS_AUTH_LOGIN_ATTEMPT_USER
       ? `${process.env.REDIS_AUTH_LOGIN_ATTEMPT_USER}:${email}`
-      : `auth:login:user:${email}`;
+      : `auth:login:attempt:user:${email}`;
 
     const keyAccess = this.configService.get<string>(
       'JWT_ACCESS_TOKEN_SECRET_KEY',
@@ -91,6 +94,15 @@ export class AuthService {
       throw new InternalServerErrorException('Missing JWT configuration');
     }
 
+    // check redis rate limited
+    const redisId = `auth:login:attempt:ip:${ip}`;
+    const countRedis = Number((await this.redisService.get(redisId)) || 0);
+    const countCacheUser = Number((await this.redisService.get(cacheKey)) || 0);
+    if (countRedis >= 5 || countCacheUser >= 5) {
+      throw new UnauthorizedException('User is locked for 5 minutes');
+    }
+
+    //get user
     const startUser = timeNow();
     const user = await this.userRepository
       .createQueryBuilder('user')
@@ -110,13 +122,6 @@ export class AuthService {
     }
     measureTime('get user', startUser);
 
-    // check redis rate limited
-    const redisId = `user:${ip}:${user.email}`;
-    const countRedis = Number((await this.redisService.get(redisId)) || 0);
-    const countCacheUser = Number((await this.redisService.get(cacheKey)) || 0);
-    if (countRedis >= 5 || countCacheUser >= 5) {
-      throw new UnauthorizedException('User is locked for 5 minutes');
-    }
     // check password
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
@@ -198,6 +203,10 @@ export class AuthService {
       });
     } catch (error: unknown) {
       console.log(error);
+      this.logger.error(
+        'Failed to create refresh token',
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new InternalServerErrorException('Failed to create refresh token');
     }
     measureTime('check transaction', startTransaction);
@@ -212,29 +221,20 @@ export class AuthService {
   }
 
   // step: logout2
-  async logout(user: IPayloadJWTLogin, ip: string) {
+  async logout(user: IPayloadJWTLogin) {
     if (!user.sub) {
       throw new UnauthorizedException('User not found');
     }
-    const userExist = await this.userRepository.findOneBy({
-      id: user.sub,
+    const userExist = await this.userRepository.exists({
+      where: { id: user.sub },
     });
     if (!userExist) {
       throw new UnauthorizedException('User not found');
-    }
-    // check refresh token
-    const refreshToken = await this.refreshTokenRepository.findOneBy({
-      userId: user.sub,
-    });
-    if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token not found');
     }
     // delete refresh token
     await this.refreshTokenRepository.delete({
       userId: user.sub,
     });
-    // delete redis
-    await this.redisService.del(`user:${ip}:${userExist.email}`);
   }
 
   // step: register
