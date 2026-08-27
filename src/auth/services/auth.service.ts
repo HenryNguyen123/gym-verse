@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -10,7 +11,7 @@ import { LoginDto } from '../dtos/request/login.request.dto';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { comparePassword, hashPassword } from 'src/commons/utils/password.util';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -240,11 +241,11 @@ export class AuthService {
   // step: register
   async register(registerDto: RegisterDto) {
     const start = timeNow();
-    const cacheKeys = [
-      process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
-      process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
-      process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
-    ];
+    // const cacheKeys = [
+    //   process.env.REDIS_USER_ALL_5M ?? 'users:all:5m',
+    //   process.env.REDIS_USER_ALL_10M ?? 'users:all:10m',
+    //   process.env.REDIS_USER_ALL_15M ?? 'users:all:15m',
+    // ];
     const {
       email,
       password,
@@ -261,102 +262,143 @@ export class AuthService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     // const RoleUserCode = RoleCodeEnum.USER;
     // get and check all users into redis
-    const cacheUsers = await this.userService.read();
+    // const cacheUsers = await this.userService.read();
     measureTime('get user into redis', start);
     // check user exist
-    const user = cacheUsers.find(
-      (u) => u.email === email || u.userName === userName,
-    );
+    const user = await this.userRepository.exists({
+      where: [{ email }, { userName }],
+    });
     measureTime('get user', start);
     if (user) {
       throw new ConflictException('Email or username already exists');
     }
     // hash password
     const hash = await hashPassword(password);
-    // create user
-    const userEntity = this.userRepository.create({
-      email,
-      password: hash,
-      userName,
-    });
-    await this.userRepository.save(userEntity);
-    // create profile
-    const profileEntity = this.profileRepository.create({
-      user: userEntity,
-      fullName,
-      gender,
-      birthday,
-      phone,
-      avatar: avatarUrl,
-      avatarPublicId,
-      coverImage: coverImageUrl,
-      coverImagePublicId,
-    });
-    await this.profileRepository.save(profileEntity);
-    measureTime('create profile', start);
-    // get Role
-    const role = await this.roleRepository.findOneBy({
-      code: RoleEnum.USER,
-    });
-    if (!role) {
-      throw new InternalServerErrorException('Role not found');
-    }
-    // create user role
-    const userRoleEntity = this.userRoleRepository.create({
-      user: userEntity,
-      role,
-    });
-    await this.userRoleRepository.save(userRoleEntity);
-    measureTime('create role', start);
-    // send verify mail
-    const uuid = randomUUID();
-    // check verify token
-    const checkVerifyToken = await this.verifyTokenRepository.findOneBy({
-      userId: userEntity.id,
-    });
-    if (checkVerifyToken) {
-      await this.verifyTokenRepository.delete({
-        userId: userEntity.id,
+
+    // transaction
+    let result: {
+      profileEntity: Profile;
+      uuid: string;
+    };
+    const startTransaction = timeNow();
+    try {
+      result = await this.dataSource.transaction(async (manager) => {
+        const userRepo = manager.getRepository(User);
+        const profileRepo = manager.getRepository(Profile);
+        const userRoleRepo = manager.getRepository(UserRole);
+        const verifyTokenRepo = manager.getRepository(VerifyToken);
+        const roleRepo = manager.getRepository(Role);
+        // create user
+        const userEntity = userRepo.create({
+          email,
+          password: hash,
+          userName,
+        });
+        await userRepo.save(userEntity);
+        // create profile
+        const profileEntity = profileRepo.create({
+          user: userEntity,
+          fullName,
+          gender,
+          birthday,
+          phone,
+          avatar: avatarUrl,
+          avatarPublicId,
+          coverImage: coverImageUrl,
+          coverImagePublicId,
+        });
+        await profileRepo.save(profileEntity);
+        // get Role
+        const role = await roleRepo.findOneBy({
+          code: RoleEnum.USER,
+        });
+        if (!role) {
+          throw new InternalServerErrorException('Role not found');
+        }
+        // create user role
+        const userRoleEntity = userRoleRepo.create({
+          user: userEntity,
+          role,
+        });
+        await userRoleRepo.save(userRoleEntity);
+        // send verify mail
+        const uuid = randomUUID();
+        // check verify token
+        const checkVerifyToken = await verifyTokenRepo.findOneBy({
+          userId: userEntity.id,
+        });
+        if (checkVerifyToken) {
+          await verifyTokenRepo.delete({
+            userId: userEntity.id,
+          });
+        }
+        // create verify token
+        const verifyTokenEntity = verifyTokenRepo.create({
+          userId: userEntity.id,
+          token: uuid,
+          expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        });
+        await verifyTokenRepo.save(verifyTokenEntity);
+
+        return {
+          profileEntity,
+          uuid,
+        };
       });
+    } catch (error: unknown) {
+      console.log(error);
+      if (error instanceof QueryFailedError) {
+        const driverError = error.driverError as {
+          code?: string;
+          constraint?: string;
+        };
+
+        // PostgreSQL unique_violation
+        if (driverError.code === '23505') {
+          throw new ConflictException('Email or username already exists');
+        }
+      }
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error(
+        'Failed to create new user',
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new InternalServerErrorException('Failed to create new user');
     }
-    // create verify token
-    const verifyTokenEntity = this.verifyTokenRepository.create({
-      userId: userEntity.id,
-      token: uuid,
-      expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    });
-    await this.verifyTokenRepository.save(verifyTokenEntity);
-    measureTime('create verify token', start);
+    measureTime('transcation successfully', startTransaction);
 
     //send mail with redis
-    await this.mailQueue.add(
-      MailJobName.SEND_VERIFY_MAIL,
-      {
-        mail: email,
-        fullName: profileEntity.fullName,
-        verifyLink: `${frontendUrl}/verify?token=${uuid}`,
-        expireTime: '24h',
-      },
-      {
-        attempts: 5,
-        backoff: {
-          type: 'exponential',
-          delay: 3000,
+    try {
+      await this.mailQueue.add(
+        MailJobName.SEND_VERIFY_MAIL,
+        {
+          mail: email,
+          fullName: result.profileEntity.fullName,
+          verifyLink: `${frontendUrl}/verify?token=${result.uuid}`,
+          expireTime: '24h',
         },
-        removeOnComplete: 100,
-        removeOnFail: 100,
-      },
-    );
-    //delete redis key and reset redis
-    for (const key of cacheKeys) {
-      await this.redisService.del(key);
+        {
+          attempts: 5,
+          backoff: {
+            type: 'exponential',
+            delay: 3000,
+          },
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        `Failed to enqueue verification email for user ${result.profileEntity.user.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
     }
-    await this.userService.read();
-    measureTime('reset users redis successfuly', start);
 
     measureTime('register successfuly', start);
     return {
-      stastus: 'successfuly',
+      stastus: 'success',
     };
   }
 
