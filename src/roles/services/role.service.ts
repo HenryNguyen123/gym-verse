@@ -14,17 +14,28 @@ import { RoleReadResponse } from 'src/roles/dtos/response/role-read.response.dto
 import { RoleResponseDto } from 'src/roles/dtos/response/role.response.dto';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
-import { Repository } from 'typeorm';
+import { Like, Repository } from 'typeorm';
 import { format } from 'date-fns';
 import { RoleFindByIdReponse } from 'src/roles/dtos/response/role-find-by-id.resquest.dto';
+import { RolesPaginationResponseDto } from 'src/roles/dtos/response/role-pagination.response.dto';
+import { QueryRoleRequestDto } from 'src/roles/dtos/request/query-pagination.request.dto';
+import { normalizeSearch } from 'src/commons/utils/to-lower-case.util';
+import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
+import { ttlsRedis } from 'src/commons/utils/get-redis-key.util';
+import { RedisService } from 'src/redis/redis.service';
 
 @Injectable()
 export class RoleService {
+  private rolePaginationLoading = new Map<
+    string,
+    Promise<RolesPaginationResponseDto>
+  >();
   constructor(
     @InjectRepository(Role)
     private readonly roleRepository: Repository<Role>,
     @InjectRepository(UserRole)
     private readonly userRoleRepository: Repository<UserRole>,
+    private readonly redisService: RedisService,
   ) {}
   //create role
   async create(jwt: IJwtPayload, body: RoleCreateRequest) {
@@ -141,6 +152,53 @@ export class RoleService {
       })),
     };
     return plainToInstance(RoleFindByIdReponse, { payload });
+  }
+
+  // pagination loading
+  async paginationLoading(
+    query: QueryRoleRequestDto,
+  ): Promise<RolesPaginationResponseDto> {
+    const ttls = ttlsRedis;
+    const { search, page = 1, limit = 10 } = query;
+    const normalizedSearch = normalizeSearch(search);
+    const redisKey = process.env.REDIS_ROLE_PAGINATION ?? 'role:pagination';
+
+    const queryList = {
+      normalizedSearch,
+      page,
+      limit,
+    };
+
+    const [roles, total] = await this.roleRepository.findAndCount({
+      where: search
+        ? [
+            {
+              code: Like(`%${normalizedSearch}%`),
+            },
+          ]
+        : {},
+      order: {
+        created_at: 'DESC',
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    const result: RolesPaginationResponseDto = {
+      meta: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+      data: roles.map((r) => r),
+    };
+    await Promise.all(
+      ttls.map((ttl) => {
+        const key = getRedisPaginationKey(queryList, redisKey, ttl);
+        return this.redisService.set(key, result, ttl * 60);
+      }),
+    );
+    return result;
   }
   /////////////////////////////////
   // USER ROLE
