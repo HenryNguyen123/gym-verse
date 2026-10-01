@@ -23,6 +23,8 @@ import { normalizeSearch } from 'src/commons/utils/to-lower-case.util';
 import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
 import { ttlsRedis } from 'src/commons/utils/get-redis-key.util';
 import { RedisService } from 'src/redis/redis.service';
+import { measureTime, timeNow } from 'src/commons/utils/performance.util';
+import { buildPaginationLoadingKey } from 'src/commons/utils/loading-key-pagination.util';
 
 @Injectable()
 export class RoleService {
@@ -37,6 +39,60 @@ export class RoleService {
     private readonly userRoleRepository: Repository<UserRole>,
     private readonly redisService: RedisService,
   ) {}
+  //pagination
+  async getRolepagination(
+    query: QueryRoleRequestDto,
+  ): Promise<RolesPaginationResponseDto> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+
+    const { search = '', page = 1, limit = 10 } = query;
+    const normalizedSearch = normalizeSearch(search);
+
+    const loadingKey = buildPaginationLoadingKey(normalizedSearch, page, limit);
+    const key = process.env.REDIS_ROLE_PAGINATION ?? 'role:pagination';
+
+    const queryList = {
+      normalizedSearch,
+      page: query.page,
+      limit: query.limit,
+    };
+    // check redis
+    for (const ttl of ttls) {
+      const keyRedis = getRedisPaginationKey(queryList, key, ttl);
+      const cachedUsers =
+        await this.redisService.get<RolesPaginationResponseDto>(keyRedis);
+      if (cachedUsers) {
+        measureTime(
+          `get users from redis:${key}:page:${page}:limit:${limit}:${ttl}ms`,
+          start,
+        );
+        return cachedUsers;
+      }
+    }
+
+    // return permission exists
+    if (this.rolePaginationLoading.has(loadingKey)) {
+      measureTime(`return users loading: ${loadingKey}`, start);
+      return this.rolePaginationLoading.get(loadingKey)!;
+    }
+
+    // first load users in database
+    const promise = this.paginationLoadingRole({
+      ...query,
+      page,
+      limit,
+      search: normalizedSearch,
+    });
+    this.rolePaginationLoading.set(loadingKey, promise);
+
+    try {
+      measureTime(`users loading`, start);
+      return await promise;
+    } finally {
+      this.rolePaginationLoading.delete(loadingKey);
+    }
+  }
   //create role
   async create(jwt: IJwtPayload, body: RoleCreateRequest) {
     const roleCode = body.code.toUpperCase();
@@ -155,7 +211,7 @@ export class RoleService {
   }
 
   // pagination loading
-  async paginationLoading(
+  async paginationLoadingRole(
     query: QueryRoleRequestDto,
   ): Promise<RolesPaginationResponseDto> {
     const ttls = ttlsRedis;
