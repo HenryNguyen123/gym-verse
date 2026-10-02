@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ttlsRedis } from 'src/commons/utils/get-redis-key.util';
 import { getRedisPaginationKey } from 'src/commons/utils/get-redis-pagination-key.util';
+import { buildPaginationLoadingKey } from 'src/commons/utils/loading-key-pagination.util';
+import { measureTime, timeNow } from 'src/commons/utils/performance.util';
 import { normalizeSearch } from 'src/commons/utils/to-lower-case.util';
 import { RedisService } from 'src/redis/redis.service';
 import { QueryUserRoleRequestDto } from 'src/roles/dtos/request/query-user-role-pagination.request.dto';
@@ -25,7 +27,58 @@ export class UserRoleService {
   //get pagiantion read
   async getPaginationUserRole(
     query: QueryUserRoleRequestDto,
-  ): Promise<UserRolesPaginationResponseDto> {}
+  ): Promise<UserRolesPaginationResponseDto> {
+    const start = timeNow();
+    const ttls = ttlsRedis;
+
+    const { search = '', page = 1, limit = 10 } = query;
+    const normalizedSearch = normalizeSearch(search);
+
+    const loadingKey = buildPaginationLoadingKey(normalizedSearch, page, limit);
+    const key =
+      process.env.REDIS_USER_ROLE_PAGINATION ?? 'user-role:pagination';
+
+    const queryList = {
+      normalizedSearch,
+      page: query.page,
+      limit: query.limit,
+    };
+    // check redis
+    for (const ttl of ttls) {
+      const keyRedis = getRedisPaginationKey(queryList, key, ttl);
+      const cachedUsers =
+        await this.redisService.get<UserRolesPaginationResponseDto>(keyRedis);
+      if (cachedUsers) {
+        measureTime(
+          `get users from redis:${key}:page:${page}:limit:${limit}:${ttl}ms`,
+          start,
+        );
+        return cachedUsers;
+      }
+    }
+
+    // return permission exists
+    if (this.userRolePaginationLoading.has(loadingKey)) {
+      measureTime(`return users loading: ${loadingKey}`, start);
+      return this.userRolePaginationLoading.get(loadingKey)!;
+    }
+
+    // first load users in database
+    const promise = this.paginationLoadingUserRole({
+      ...query,
+      page,
+      limit,
+      search: normalizedSearch,
+    });
+    this.userRolePaginationLoading.set(loadingKey, promise);
+
+    try {
+      measureTime(`users loading`, start);
+      return await promise;
+    } finally {
+      this.userRolePaginationLoading.delete(loadingKey);
+    }
+  }
   // pagination loading
   async paginationLoadingUserRole(
     query: QueryUserRoleRequestDto,
