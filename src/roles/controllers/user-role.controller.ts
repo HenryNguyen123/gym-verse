@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RoleAdminGuard } from 'src/auth/guards/role-admin.guard';
+import { QueryRoleRequestDto } from 'src/roles/dtos/request/query-pagination.request.dto';
 import { UserRoleService } from 'src/roles/services/user-role.service';
 
 @ApiTags('user-role')
@@ -24,7 +25,7 @@ export class UserRoleController {
   async create() {}
   //read
   @Get()
-  async read() {}
+  async read(body: QueryRoleRequestDto) {}
   //update
   @Patch(':userId')
   async update(@Param('userId', ParseIntPipe) userId: number) {}

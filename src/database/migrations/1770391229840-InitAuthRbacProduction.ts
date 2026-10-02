@@ -95,6 +95,8 @@ export class InitAuthRbacProduction1770391229840 implements MigrationInterface {
 
         CONSTRAINT fk_ur_role FOREIGN KEY (role_id)
           REFERENCES roles(id) ON DELETE CASCADE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
