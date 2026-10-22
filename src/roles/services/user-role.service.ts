@@ -10,7 +10,7 @@ import { QueryUserRoleRequestDto } from 'src/roles/dtos/request/query-user-role-
 import { UserRolesPaginationResponseDto } from 'src/roles/dtos/response/user-role-pagination.dto';
 import { Role } from 'src/roles/entities/role.entity';
 import { UserRole } from 'src/roles/entities/user-role.entity';
-import { Like, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class UserRoleService {
@@ -19,6 +19,7 @@ export class UserRoleService {
     Promise<UserRolesPaginationResponseDto>
   >();
   constructor(
+    @InjectRepository(Role)
     private readonly roleRepository: Repository<Role>,
     @InjectRepository(UserRole)
     private readonly userRoleRepository: Repository<UserRole>,

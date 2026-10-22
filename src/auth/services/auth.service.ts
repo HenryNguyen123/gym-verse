@@ -37,7 +37,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { MailJobName } from 'src/bullMQ-worker/processors/mails/mail.processor.bullMQWorker';
 import { UserService } from 'src/users/services/user.service';
-import { DataSource } from 'typeorm/browser';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class AuthService {
